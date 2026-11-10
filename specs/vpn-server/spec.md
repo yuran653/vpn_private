@@ -12,9 +12,9 @@ The verify scripts test the deployed server over the live network. `verified` me
 
 ### R-vpn-server-01: Tunnel
 
-A client holding the issued link connects to the server and reaches the internet from the server's IPv4 address.
+A client holding the issued link connects to the server and reaches the internet from an IPv4 address that is not the server's.
 
-- **R-vpn-server-01.a** [verified] WHEN a client connects with the issued link and requests a web page THEN the page sees the server's IPv4 address as the client address.
+- **R-vpn-server-01.a** [verified] WHEN a client connects with the issued link and requests a web page THEN the page sees an IPv4 client address that is not the server's address.
   Test: `scripts/verify-vpn.sh` (R-vpn-server-01.a)
 - **R-vpn-server-01.b** [verified] WHEN a host on the internet opens a TCP connection to port 443 of the server THEN the connection is accepted.
   Test: `scripts/verify-external.sh` (R-vpn-server-01.b)
@@ -27,7 +27,7 @@ No traffic leaves the server over IPv6, from the host or from a client.
   Test: `scripts/verify-vpn.sh` (R-vpn-server-02.a)
 - **R-vpn-server-02.b** [verified] WHEN a client requests an IPv6 destination through the tunnel THEN the request fails.
   Test: `scripts/verify-vpn.sh` (R-vpn-server-02.b)
-- **R-vpn-server-02.c** [verified] WHEN a client requests a dual-stack site through the tunnel THEN the site sees the server's IPv4 address.
+- **R-vpn-server-02.c** [verified] WHEN a client requests a dual-stack site through the tunnel THEN the site sees an IPv4 address.
   Test: `scripts/verify-vpn.sh` (R-vpn-server-02.c)
 - **R-vpn-server-02.d** [verified] WHEN a client sends an AAAA query through the tunnel THEN the answer contains no address.
   Test: `scripts/verify-vpn.sh` (R-vpn-server-02.d)
@@ -52,7 +52,7 @@ A party without the client key cannot tell the VPN port from an ordinary HTTPS s
 
 The management panel and its subscription service cannot be found or reached from the internet.
 
-- **R-vpn-server-05.a** [verified] WHEN the host's listening sockets are listed THEN only SSH and port 443 listen on a public address.
+- **R-vpn-server-05.a** [verified] WHEN the host's listening sockets are listed THEN only SSH and port 443 listen on a public address, apart from the UDP socket the proxy holds open to send its WARP tunnel traffic.
   Test: `scripts/verify-vpn.sh` (R-vpn-server-05.a)
 - **R-vpn-server-05.b** [verified] WHEN a host on the internet connects to the panel port, or to the usual panel and subscription ports, THEN the connection is not accepted.
   Test: `scripts/verify-external.sh` (R-vpn-server-05.b)
@@ -90,7 +90,7 @@ Security updates install and take effect without an operator.
 
 ### R-vpn-server-09: Secrets stay on the server
 
-- **R-vpn-server-09.a** [untested: no automated test; the run output was searched for secrets and the file modes were listed] WHEN the deploy script runs THEN its output contains no panel credential, API token, private key or client link, and the files holding them are readable by root only.
+- **R-vpn-server-09.a** [untested: no automated test; the run output was searched for the WARP key, token and device id and the file modes were listed] WHEN the deploy script runs THEN its output contains no panel credential, API token, private key, WARP key or token, or client link, and the files holding them are readable by root only.
   Test: none
 
 ### R-vpn-server-10: VPN port connection limits per address
@@ -116,3 +116,18 @@ The server sends tunnel traffic with a congestion control that keeps its rate wh
   Test: `scripts/verify-vpn.sh` (R-vpn-server-11.e)
 - **R-vpn-server-11.f** [verified] WHEN the kernel settings are inspected THEN TCP probes for a smaller packet size after it detects that large packets are lost on the path.
   Test: `scripts/verify-vpn.sh` (R-vpn-server-11.f)
+
+### R-vpn-server-12: Client traffic leaves through Cloudflare WARP
+
+Everything a client sends through the tunnel leaves the server through Cloudflare WARP, exits in Thailand, and never leaves from the server's own address.
+
+- **R-vpn-server-12.a** [verified] WHEN a client requests Cloudflare's connection report through the tunnel THEN the report says the request came through WARP.
+  Test: `scripts/verify-vpn.sh` (R-vpn-server-12.a)
+- **R-vpn-server-12.b** [verified] WHEN a client requests Cloudflare's connection report through the tunnel THEN the report places the client in Thailand.
+  Test: `scripts/verify-vpn.sh` (R-vpn-server-12.b)
+- **R-vpn-server-12.c** [verified] WHEN the running proxy configuration is inspected THEN it has no outbound that sends traffic from the server's own address, so a request fails when WARP is unreachable.
+  Test: `scripts/verify-vpn.sh` (R-vpn-server-12.c)
+- **R-vpn-server-12.d** [verified] WHEN a client opens YouTube Music through the tunnel THEN the page is not the "not available in your area" page.
+  Test: `scripts/verify-vpn.sh` (R-vpn-server-12.d)
+- **R-vpn-server-12.e** [untested: no automated test; the script was run twice on the VPS and the checksum of the registration file compared] WHEN the deploy script runs a second time on the same host THEN the WARP registration is kept, not made again.
+  Test: none

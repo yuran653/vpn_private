@@ -181,13 +181,19 @@ subject=$(echo | timeout 15 openssl s_client -connect "127.0.0.1:$VPN_PORT" \
     || fail R-vpn-server-04.a "unauthenticated TLS client did not get a valid certificate"
 
 # R-vpn-server-05.a: nothing but SSH and the VPN port listens on a public address.
-public_listeners=$(ss -Htlnu | awk '{print $5}' | grep -Ev '^(127\.|\[::1\]|\[::ffff:127\.)' \
-    | sed -E 's/.*:([0-9]+)$/\1/' | sort -un | tr '\n' ' ')
+# The one exception is the UDP socket Xray holds open for its WARP tunnel: it is
+# the tunnel's own sending socket, on a port the firewall does not admit (05.c).
+tcp_listeners=$(ss -Htlnp | awk '{print $4 " " $6}' | grep -Ev '^(127\.|\[::1\]|\[::ffff:127\.)' \
+    | sed -E 's/^[^ ]*:([0-9]+) .*/\1/' | sort -un | tr '\n' ' ')
+udp_other=$(ss -Hulnp | awk '{print $4 " " $6}' | grep -Ev '^(127\.|\[::1\]|\[::ffff:127\.)' \
+    | grep -v '"xray-' | sed -E 's/^[^ ]*:([0-9]+) .*/\1/' | sort -un | tr '\n' ' ')
 ssh_port=$(sshd -T 2>/dev/null | awk '$1 == "port" {print $2}')
 expected=$(printf '%s\n%s\n' "$ssh_port" "$VPN_PORT" | sort -un | tr '\n' ' ')
-[ "$public_listeners" = "$expected" ] \
-    && pass R-vpn-server-05.a "public listeners are only SSH and ${VPN_PORT}" \
-    || fail R-vpn-server-05.a "public listeners are: $public_listeners"
+if [ "$tcp_listeners" = "$expected" ] && [ -z "$udp_other" ]; then
+    pass R-vpn-server-05.a "public listeners are only SSH and ${VPN_PORT}, plus the WARP tunnel's own UDP socket"
+else
+    fail R-vpn-server-05.a "public listeners are: tcp ${tcp_listeners:-none}; udp not owned by the proxy: ${udp_other:-none}"
+fi
 
 # R-vpn-server-05.c: the firewall admits only SSH and the VPN port.
 rules=$(ufw status | awk '/ALLOW/ {print $1}' | sort -u | tr '\n' ' ')

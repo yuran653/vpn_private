@@ -2,7 +2,7 @@
 
 Deploy and harden a VLESS + XTLS-Reality VPN server on a bare Ubuntu VPS. The server must prevent every identity disclosure that can be enforced server-side: DNS leaks, IPv6 egress, tunnel fingerprinting by DPI, and panel discovery.
 
-Stack: Ubuntu 22.04/24.04 LTS, Xray core managed through the 3x-ui panel, ufw, fail2ban, unattended-upgrades
+Stack: Ubuntu 22.04/24.04 LTS, Xray core managed through the 3x-ui panel, Cloudflare WARP as the exit for client traffic (ADR-0008), ufw, fail2ban, unattended-upgrades
 
 ## Commands
 
