@@ -9,7 +9,7 @@ One bash script, `scripts/deploy-vpn.sh`, copied to the VPS with `scp` and run w
 | Module | Files | Change |
 |---|---|---|
 | (none in the repo's architecture) | `scripts/deploy-vpn.sh`, `scripts/verify-vpn.sh`, `scripts/verify-external.sh` | New scripts, outside the module map |
-| VPS (not in the repo) | `/usr/local/x-ui/`, `/etc/x-ui/`, `/etc/sysctl.d/60-vpn-disable-ipv6.conf`, `/etc/apt/apt.conf.d/20auto-upgrades`, `/root/vpn/`, ufw rules | Written by the script |
+| VPS (not in the repo) | `/usr/local/x-ui/`, `/etc/x-ui/`, `/etc/default/grub.d/60-vpn-disable-ipv6.cfg`, `/etc/sysctl.d/60-vpn-disable-ipv6.conf`, `/etc/netplan/*.yaml`, `/etc/default/ufw`, `/etc/apt/apt.conf.d/20auto-upgrades`, `/root/vpn/`, ufw rules | Written or edited by the script |
 
 New modules or dependencies between modules: none. `docs/architecture.md` is unchanged.
 
@@ -24,7 +24,7 @@ New modules or dependencies between modules: none. `docs/architecture.md` is unc
 
 | Leak | Measure |
 |---|---|
-| IPv6 egress | `net.ipv6.conf.{all,default}.disable_ipv6 = 1`; the `direct` outbound uses `ForceIPv4`; a routing rule sends `::/0` to `blocked`; DNS `queryStrategy` is `UseIPv4`. |
+| IPv6 egress | Kernel parameter `ipv6.disable=1`, IPv6 entries removed from netplan, ufw `IPV6=no` (ADR-0004); the `direct` outbound uses `ForceIPv4`; a routing rule sends `::/0` to `blocked`; DNS `queryStrategy` is `UseIPv4`. |
 | DNS | Xray's DNS uses two DoH resolvers (`https+local://1.1.1.1`, `https+local://8.8.8.8`). A routing rule sends port 53 from clients to a `dns` outbound, so plaintext DNS never leaves the VPS. Sniffing (`http`, `tls`, `quic`) makes the server resolve the real name itself. |
 | DPI fingerprinting | VLESS over TCP with Reality and the `xtls-rprx-vision` flow on 443. An unauthenticated handshake is forwarded to the cover site. |
 | Panel discovery | Panel `listenIP` 127.0.0.1 on a random port with a random path; subscription service off; ufw opens only SSH and 443/tcp. |
@@ -39,9 +39,10 @@ New modules or dependencies between modules: none. `docs/architecture.md` is unc
 | Panel on a public port behind a secret path and TLS | Still answers a scanner. A loopback bind cannot be discovered. |
 | Write the inbound straight into the panel's database | Depends on the schema; the API is documented by the panel's own OpenAPI file. |
 | Leave IPv6 on and filter it in Xray only | One missed rule leaks. Disabling it on the host cannot be bypassed from Xray. |
+| Disable IPv6 by sysctl only | Implemented first and replaced: undone by systemd-networkd at boot (ADR-0004). |
 | Plain DNS to the VPS's default resolvers | The hosting network can read every lookup. |
 
-Decision record needed: ADR-0002 (panel on loopback, pinned installer), ADR-0003 (Reality cover site).
+Decision record needed: ADR-0002 (panel on loopback, pinned installer), ADR-0003 (Reality cover site), ADR-0004 (IPv6 off in the kernel; a reversal, with a "Do not" line).
 
 ## Verification
 
@@ -56,7 +57,8 @@ Decision record needed: ADR-0002 (panel on loopback, pinned installer), ADR-0003
 | R-vpn-server-05.b | `scripts/verify-external.sh` (R-vpn-server-05.b) |
 | R-vpn-server-06.a, 07.a, 08.b | `scripts/verify-vpn.sh` (same IDs) |
 | R-vpn-server-08.a | None automated. Second run on the VPS, link checksum compared before and after. |
-| R-vpn-server-08.c | None automated. Reboot, then both verify scripts. |
+| R-vpn-server-08.c | `scripts/verify-vpn.sh` (R-vpn-server-08.c) checks the boot parameter. The full criterion was checked by rebooting and running both verify scripts. |
+| R-vpn-server-08.d | `scripts/verify-vpn.sh` (R-vpn-server-08.d) |
 | R-vpn-server-09.a | None automated. Run output searched for secrets; file modes listed. |
 
 The verify scripts use the live network, so they are not deterministic in the sense of the change cycle. They test a deployed server; there is no offline substitute.
@@ -77,3 +79,10 @@ The deploy script ran on the VPS with exit code 0 on the first attempt. Two chec
 2. `verify-vpn.sh` piped `apt-config dump` into `grep -q` under `pipefail`. `grep -q` closed the pipe early and the pipeline failed. The output is now captured first.
 
 The deploy script also sets `NEEDRESTART_SUSPEND=1`, so package installs do not print service-restart notices.
+
+### Found by the reboot test
+
+3. After the first reboot the VPS had its global IPv6 address again. systemd-networkd had set `disable_ipv6 = 0` on the interface, because the provider's netplan file carries an IPv6 default route. The sysctl approach was replaced by the kernel parameter `ipv6.disable=1`, with ufw set to `IPV6=no` (ADR-0004).
+4. After the second reboot IPv6 stayed off, but the boot took 2 min 16 s: networkd stayed in "configuring" on the IPv6 route and `systemd-networkd-wait-online` timed out. The deploy script now removes IPv6 entries from netplan, keeping the originals in `/root/vpn/netplan-backup/`. The third reboot took 17 s and both verify scripts passed.
+
+The client link had the same checksum after all four deploy runs and three reboots.

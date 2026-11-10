@@ -53,7 +53,8 @@ The server keeps no record of which client connected to which destination.
 
 - **R-vpn-server-08.a** WHEN the deploy script runs a second time on the same host THEN it exits with code 0 and the client link is unchanged.
 - **R-vpn-server-08.b** WHEN the host is inspected THEN the panel service is running and enabled at boot.
-- **R-vpn-server-08.c** WHEN the host reboots THEN every other criterion in this spec still holds.
+- **R-vpn-server-08.c** WHEN the host reboots THEN every other criterion in this spec still holds, and IPv6 is off from the start of the boot.
+- **R-vpn-server-08.d** WHEN the host has booted THEN its network interfaces are fully configured, so the boot is not held up waiting for the network.
 
 ### R-vpn-server-09: Secrets stay on the server
 
