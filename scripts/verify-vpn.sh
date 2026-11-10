@@ -170,6 +170,34 @@ else
     fail R-vpn-server-07.a "unattended upgrades are not enabled"
 fi
 
+# R-vpn-server-07.b: a security-update run has completed in the last 48 hours.
+# The log is written at the end of every run, including one that found nothing.
+uu_log=/var/log/unattended-upgrades/unattended-upgrades.log
+if [ -n "$(find "$uu_log" -mmin -2880 2>/dev/null)" ]; then
+    pass R-vpn-server-07.b "a security-update run completed in the last 48 hours"
+else
+    fail R-vpn-server-07.b "no security-update run in the last 48 hours"
+fi
+
+# R-vpn-server-07.c: an update that needs a reboot restarts the host at 04:00.
+if printf '%s\n' "$apt_settings" | grep -q 'Unattended-Upgrade::Automatic-Reboot "true"' \
+    && printf '%s\n' "$apt_settings" | grep -q 'Unattended-Upgrade::Automatic-Reboot-Time "04:00"'; then
+    pass R-vpn-server-07.c "automatic reboot after updates is on, at 04:00"
+else
+    fail R-vpn-server-07.c "automatic reboot after updates is not set for 04:00"
+fi
+
+# R-vpn-server-10.a: one address cannot hold more than 1000 connections to the VPN
+# port or open more than 100 new ones per second (burst 300).
+vpn_rules=$(iptables -S ufw-before-input 2>/dev/null | grep -- "--dport $VPN_PORT " | grep -- '-j DROP')
+if printf '%s\n' "$vpn_rules" | grep -q -- '--connlimit-above 1000 --connlimit-mask 32' \
+    && printf '%s\n' "$vpn_rules" | grep -- '--hashlimit-mode srcip' \
+        | grep -- '--hashlimit-above 100/sec' | grep -q -- '--hashlimit-burst 300'; then
+    pass R-vpn-server-10.a "per-address connection limits are loaded on ${VPN_PORT}/tcp"
+else
+    fail R-vpn-server-10.a "per-address connection limits are missing on ${VPN_PORT}/tcp"
+fi
+
 # R-vpn-server-08.c (boot half): IPv6 stays off across restarts. The host must have
 # booted with IPv6 disabled in the kernel; a runtime switch alone is undone at boot.
 check R-vpn-server-08.c "kernel booted with IPv6 disabled" \

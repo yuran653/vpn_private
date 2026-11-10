@@ -3,13 +3,14 @@
 #
 # Installs the 3x-ui panel (pinned release), binds it to loopback, and configures
 # Xray through the panel API:
-#   1. unattended security upgrades on
+#   1. unattended security upgrades on, pending ones installed now, and an
+#      automatic reboot at 04:00 server time when an update needs one (ADR-0006)
 #   2. IPv6 disabled on the host (kernel parameter; needs one reboot after the first run)
 #   3. 3x-ui installed from the pinned release, panel on 127.0.0.1 only,
 #      subscription service off
 #   4. Xray template: encrypted DNS, IPv4-only egress, port-53 capture, no access log
 #   5. one VLESS + Reality + Vision inbound on 443/tcp with one client
-#   6. ufw: 443/tcp allowed
+#   6. ufw: 443/tcp allowed, with per-address limits on new connections (ADR-0005)
 #   7. the client link written to /root/vpn/vless-link.txt (mode 600)
 #
 # Usage, on the VPS as root or via sudo:
@@ -45,6 +46,17 @@ readonly SYSCTL_CONF=/etc/sysctl.d/60-vpn-disable-ipv6.conf
 readonly GRUB_CONF=/etc/default/grub.d/60-vpn-disable-ipv6.cfg
 readonly NETPLAN_BACKUP=$STATE_DIR/netplan-backup
 readonly AUTO_UPGRADES=/etc/apt/apt.conf.d/20auto-upgrades
+readonly AUTO_REBOOT=/etc/apt/apt.conf.d/52vpn-auto-reboot
+readonly AUTO_REBOOT_TIME=04:00
+readonly UFW_BEFORE=/etc/ufw/before.rules
+readonly LIMITS_MARKER='vpn-server port limits'
+# One address may hold this many connections to the VPN port at once, and open
+# this many new ones per second. Every stream a client opens through the tunnel
+# is its own connection to this port, so the numbers sit far above normal use,
+# including several devices behind one home address (ADR-0005).
+readonly VPN_MAX_CONCURRENT=1000
+readonly VPN_MAX_NEW_PER_SECOND=100
+readonly VPN_NEW_BURST=300
 
 log() { printf '[deploy] %s\n' "$*"; }
 die() { printf '[deploy] error: %s\n' "$*" >&2; exit 1; }
@@ -70,8 +82,22 @@ APT::Periodic::Update-Package-Lists "1";
 APT::Periodic::Unattended-Upgrade "1";
 EOF
 chmod 644 "$AUTO_UPGRADES"
+# An update that needs a reboot (kernel, libc) is not in effect until the host
+# restarts, so the host restarts itself in the quiet hours (ADR-0006).
+cat > "$AUTO_REBOOT" <<EOF
+Unattended-Upgrade::Automatic-Reboot "true";
+Unattended-Upgrade::Automatic-Reboot-WithUsers "true";
+Unattended-Upgrade::Automatic-Reboot-Time "$AUTO_REBOOT_TIME";
+Unattended-Upgrade::Remove-Unused-Kernel-Packages "true";
+EOF
+chmod 644 "$AUTO_REBOOT"
 systemctl enable --now unattended-upgrades >/dev/null 2>&1
-log "unattended upgrades enabled"
+log "unattended upgrades enabled, automatic reboot at $AUTO_REBOOT_TIME"
+# Install what is pending now instead of waiting for the nightly timer: a fresh
+# provider image is months behind. Quick when nothing is pending.
+log "installing pending security updates (the first run can take several minutes)"
+PYTHONWARNINGS=ignore unattended-upgrade || die "unattended-upgrade failed; see /var/log/unattended-upgrades/ on the VPS"
+log "security updates installed"
 
 # 2. IPv6 off.
 #    At boot: the kernel parameter ipv6.disable=1. A sysctl alone does not hold,
@@ -293,6 +319,44 @@ fi
 
 # 6. Firewall, then restart Xray so the template and inbound are live.
 ufw allow "${VPN_PORT}/tcp" comment 'VLESS Reality' >/dev/null
+
+# Per-address limits on new connections to the VPN port, as one marked block at
+# the end of ufw's before-input chain, which runs ahead of the ALLOW rules. The
+# candidate file is tested against the live ruleset before it replaces the
+# current one, and the previous file comes back if the reload fails. Same
+# mechanism as the SSH limits in harden-vps.sh, with its own marker.
+set_before_rules_block() { # set_before_rules_block <marker> <file with rule lines>
+    local marker=$1 block=$2
+    awk -v begin="# BEGIN $marker" -v end="# END $marker" -v block="$block" '
+        $0 == begin { skip = 1 }
+        $0 == "*filter" { in_filter = 1 }
+        !skip && in_filter && $0 == "COMMIT" {
+            print begin
+            while ((getline line < block) > 0) print line
+            print end
+            in_filter = 0
+        }
+        !skip { print }
+        $0 == end { skip = 0 }' "$UFW_BEFORE" > "$work/before.rules"
+    grep -qxF "# END $marker" "$work/before.rules" || die "no filter table found in $UFW_BEFORE"
+    cmp -s "$work/before.rules" "$UFW_BEFORE" && return 0
+    iptables-restore --test --noflush < "$work/before.rules" \
+        || die "new firewall rules for '$marker' did not validate; nothing changed"
+    cp -p "$UFW_BEFORE" "$work/before.rules.bak"
+    cat "$work/before.rules" > "$UFW_BEFORE"
+    if ! ufw reload >/dev/null; then
+        cat "$work/before.rules.bak" > "$UFW_BEFORE"
+        ufw reload >/dev/null
+        die "ufw did not reload with the rules for '$marker'; previous rules restored"
+    fi
+}
+cat > "$work/limits" <<EOF
+-A ufw-before-input -p tcp --syn --dport $VPN_PORT -m connlimit --connlimit-above $VPN_MAX_CONCURRENT --connlimit-mask 32 -j DROP
+-A ufw-before-input -p tcp --syn --dport $VPN_PORT -m hashlimit --hashlimit-name vpn-new --hashlimit-mode srcip --hashlimit-above $VPN_MAX_NEW_PER_SECOND/second --hashlimit-burst $VPN_NEW_BURST -j DROP
+EOF
+set_before_rules_block "$LIMITS_MARKER" "$work/limits"
+log "per-address connection limits applied on ${VPN_PORT}/tcp"
+
 api_ok "restart xray" panel/api/server/restartXrayService -X POST >/dev/null
 listening=""
 for _ in $(seq 1 20); do
@@ -320,5 +384,8 @@ systemctl is-active x-ui
 ufw status | sed -n '1,12p'
 if [ -n "$reboot_needed" ]; then
     log "REBOOT NEEDED: IPv6 is off now, but stays off across restarts only after one reboot"
+fi
+if [ -e /var/run/reboot-required ]; then
+    log "REBOOT NEEDED: an installed update takes effect only after a reboot (automatic at $AUTO_REBOOT_TIME otherwise)"
 fi
 log "done"

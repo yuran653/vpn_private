@@ -8,5 +8,5 @@ Specs change only when a change is archived (see `.agents/skills/sdd-change/SKIL
 
 | Capability | Spec | Summary |
 |---|---|---|
-| vps-baseline | `specs/vps-baseline/spec.md` | Applies the SSH keepalive, fail2ban and ufw baseline to the VPS through `scripts/harden-vps.sh`. |
-| vpn-server | `specs/vpn-server/spec.md` | VLESS + Reality server with no IPv6 egress, server-side encrypted DNS, a cover site for probes and a loopback-only panel, deployed by `scripts/deploy-vpn.sh`. |
+| vps-baseline | `specs/vps-baseline/spec.md` | Applies the SSH keepalive and login settings, fail2ban, ufw, SYN flood settings and per-address SSH connection limits to the VPS through `scripts/harden-vps.sh`. |
+| vpn-server | `specs/vpn-server/spec.md` | VLESS + Reality server with no IPv6 egress, server-side encrypted DNS, a cover site for probes, a loopback-only panel, self-installing security updates and per-address connection limits, deployed by `scripts/deploy-vpn.sh`. |

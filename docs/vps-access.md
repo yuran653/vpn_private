@@ -10,7 +10,7 @@ Instructions for coding agents (Kimi Code and similar) operating in this repo.
 | OS | Ubuntu 24.04 LTS, bare |
 | Global IP | geolocation-verified Thailand (`curl ifconfig.co/country` → `TH`) |
 | SSH | key-only, user `ubuntu`, alias `zcom-th`, private key `~/.ssh/zcom-th-vpn` (keep secret), public key `~/.ssh/zcom-th-vpn.pub` |
-| Root | SSH login as `root` is **blocked** by the provider image. `su root` works via console password (fallback only). Use `sudo` for privileged commands. |
+| Root | SSH login as `root` is **refused** by sshd (`PermitRootLogin no`, set by `scripts/harden-vps.sh`). `su root` works via console password (fallback only). Use `sudo` for privileged commands. |
 
 ## Connecting
 
@@ -30,14 +30,19 @@ First connect: accept the host key (`yes`). If the key prompt returns on every c
 
 ## Baseline script
 
-`scripts/harden-vps.sh` applies the SSH keepalive, fail2ban and ufw baseline. Run it on the VPS with your current IP, which is passed as an argument and not stored in the repo:
+`scripts/harden-vps.sh` applies the baseline: SSH keepalive and login settings (no root, no passwords, no X11), fail2ban, ufw, SYN flood settings and per-address limits on SSH connections. Run it on the VPS with your current IP, which is passed as an argument and not stored in the repo, then check the result:
 
 ```bash
-scp scripts/harden-vps.sh zcom-th:/tmp/harden-vps.sh
-ssh zcom-th 'sudo -n bash /tmp/harden-vps.sh <YOUR_IP>; rm -f /tmp/harden-vps.sh'
+scp scripts/harden-vps.sh scripts/verify-baseline.sh zcom-th:/tmp/
+ssh zcom-th 'sudo -n bash /tmp/harden-vps.sh <YOUR_IP>'
+ssh zcom-th 'sudo -n bash /tmp/verify-baseline.sh; rm -f /tmp/harden-vps.sh /tmp/verify-baseline.sh'
 ```
 
-The change record is in `changes/archive/2026-11-10-apply-vps-baseline/`.
+After the script reloads sshd and ufw, the second `ssh` above is the login check that rule 4 asks for.
+
+One address may hold 10 SSH connections at once and open 30 per minute (ADR-0005). A loop that opens more than that from your own address is dropped until the rate falls; wait a minute and retry.
+
+The change records are in `changes/archive/2026-11-10-apply-vps-baseline/` and `changes/archive/2026-11-10-harden-against-attacks/`.
 
 ## VPN deployment
 
@@ -51,6 +56,21 @@ bash scripts/verify-external.sh
 ```
 
 If the deploy script prints `REBOOT NEEDED`, reboot the VPS once and run both verify scripts again.
+
+The deploy script also installs pending security updates, which takes several minutes on a fresh image. Start it detached, so a dropped SSH session cannot interrupt it. The script restarts Xray, which drops an SSH session that itself travels through this VPN:
+
+```bash
+ssh zcom-th 'sudo -n sh -c "nohup bash /tmp/deploy-vpn.sh > /root/vpn/deploy-run.log 2>&1 &"'
+ssh zcom-th 'sudo -n tail /root/vpn/deploy-run.log'      # repeat until it prints "[deploy] done"
+```
+
+## Updates and reboots
+
+Security updates install every night without an operator. When one needs a reboot, the host reboots itself at 04:00 Asia/Bangkok (ADR-0006); VPN connections drop for about a minute. One address may hold 1000 connections to port 443 and open 100 per second (ADR-0005).
+
+## What the server does not defend against
+
+A volumetric DDoS fills the uplink before the firewall sees a packet. Only the provider can absorb it, and Reality cannot sit behind a CDN. The practical recovery is a new IP address from the provider, then a re-run of `deploy-vpn.sh` to rewrite the client link.
 
 Secrets stay on the VPS, readable by root only:
 

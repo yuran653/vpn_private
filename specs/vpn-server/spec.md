@@ -68,8 +68,14 @@ The server keeps no record of which client connected to which destination.
 
 ### R-vpn-server-07: Unattended security updates
 
+Security updates install and take effect without an operator.
+
 - **R-vpn-server-07.a** [verified] WHEN the host's update settings are inspected THEN unattended upgrades are enabled.
   Test: `scripts/verify-vpn.sh` (R-vpn-server-07.a)
+- **R-vpn-server-07.b** [verified] WHEN the host is inspected THEN a security-update run has completed within the last 48 hours.
+  Test: `scripts/verify-vpn.sh` (R-vpn-server-07.b)
+- **R-vpn-server-07.c** [verified] WHEN the host's update settings are inspected THEN an automatic reboot after an update that needs one is on, set for 04:00 server time.
+  Test: `scripts/verify-vpn.sh` (R-vpn-server-07.c)
 
 ### R-vpn-server-08: Re-run and reboot safety
 
@@ -86,3 +92,10 @@ The server keeps no record of which client connected to which destination.
 
 - **R-vpn-server-09.a** [untested: no automated test; the run output was searched for secrets and the file modes were listed] WHEN the deploy script runs THEN its output contains no panel credential, API token, private key or client link, and the files holding them are readable by root only.
   Test: none
+
+### R-vpn-server-10: VPN port connection limits per address
+
+One address cannot occupy the VPN port with connections.
+
+- **R-vpn-server-10.a** [verified] WHEN the loaded firewall rules are listed THEN new connections to port 443 from one address are dropped beyond 1000 concurrent connections or 100 new connections per second with a burst of 300.
+  Test: `scripts/verify-vpn.sh` (R-vpn-server-10.a)
