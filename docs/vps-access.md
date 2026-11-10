@@ -37,7 +37,39 @@ scp scripts/harden-vps.sh zcom-th:/tmp/harden-vps.sh
 ssh zcom-th 'sudo -n bash /tmp/harden-vps.sh <YOUR_IP>; rm -f /tmp/harden-vps.sh'
 ```
 
-The change record is in `changes/apply-vps-baseline/`.
+The change record is in `changes/archive/2026-11-10-apply-vps-baseline/`.
+
+## VPN deployment
+
+`scripts/deploy-vpn.sh` installs 3x-ui and configures the VLESS + Reality server. Run the baseline script first. It takes no arguments and prints no secret:
+
+```bash
+scp scripts/deploy-vpn.sh scripts/verify-vpn.sh zcom-th:/tmp/
+ssh zcom-th 'sudo -n bash /tmp/deploy-vpn.sh'
+ssh zcom-th 'sudo -n bash /tmp/verify-vpn.sh; sudo -n rm -f /tmp/deploy-vpn.sh /tmp/verify-vpn.sh'
+bash scripts/verify-external.sh
+```
+
+If the deploy script prints `REBOOT NEEDED`, reboot the VPS once and run both verify scripts again.
+
+Secrets stay on the VPS, readable by root only:
+
+| What | Where |
+|---|---|
+| Client link (`vless://...`) | `/root/vpn/vless-link.txt` |
+| Panel user, password, port, path and API token | `/etc/x-ui/install-result.env` |
+| Installer output | `/root/vpn/install.log` |
+| Original netplan files | `/root/vpn/netplan-backup/` |
+
+To show the client link: `ssh zcom-th 'sudo -n cat /root/vpn/vless-link.txt'`. Do not paste it into the repo (rule 2).
+
+The panel listens on 127.0.0.1 only (ADR-0002). To open it, read the port and path from `install-result.env`, then tunnel:
+
+```bash
+ssh -L 8443:127.0.0.1:<PANEL_PORT> zcom-th     # then browse to http://127.0.0.1:8443/<PANEL_PATH>/
+```
+
+The Xray template is owned by `deploy-vpn.sh`; edits made to it in the panel are overwritten on the next run.
 
 ## Post-connect sanity check (run before any work)
 
