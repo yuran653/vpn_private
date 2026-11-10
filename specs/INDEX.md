@@ -1,0 +1,11 @@
+# Specs
+
+One row per capability. Each spec at `specs/<capability>/spec.md` states what that capability does now.
+
+A capability is a coherent slice of behavior that a user or caller can name, such as `auth` or `export`. It is not a class, an endpoint, a task or a ticket. A new piece of work usually changes an existing capability; it gets a new row only when no existing capability covers the behavior.
+
+Specs change only when a change is archived (see `.agents/skills/sdd-change/SKILL.md`). Do not edit them directly.
+
+| Capability | Spec | Summary |
+|---|---|---|
+| vps-baseline | `specs/vps-baseline/spec.md` | Applies the SSH keepalive, fail2ban and ufw baseline to the VPS through `scripts/harden-vps.sh`. |
