@@ -10,12 +10,14 @@ Settings changed through the panel API, all idempotent:
 |---|---|---|
 | `subEnable` | true | The service runs. |
 | `subListen` | 127.0.0.1 | Not reachable from the internet. |
-| `subDomain` | the host's public IPv4 address | The service writes the link's server address from the request's Host header, which is `192.0.2.1` here; this pins the real address. |
+| `subDomain` | empty | The service refuses a request whose Host is not this domain (403); the client's Host is `192.0.2.1`. |
 | `subTitle` | `VPN ไทย` | The group name in Happ. |
 | `subUpdates` | 1 | Happ refreshes the counter hourly. |
 | `remarkTemplate` | `{{INBOUND}}` | The profile name is the inbound's name only: no email, no quota text. |
 
-The inbound's remark becomes `กรุงเทพฯ cloud.z.com`, updated through the panel API when it differs. The client keeps its quota (0) and expiry (0), so the response carries `total=0` and no expiry. The client link file gets the same name, percent-encoded, after the `#`.
+The inbound's remark becomes `กรุงเทพฯ cloud.z.com` and its external proxy entry carries the host's public address and port 443, so the link names the real server. Both are updated through the panel API when they differ. The client gets a subscription ID once, if it has none.
+
+The `sub` outbound has `finalRules` that allow only `127.0.0.1:<sub port>` and block the rest: Xray blocks a remote client's connection to loopback by default, which made the request hang. Two routing rules, by address and by name, because HTTP sniffing turns the destination into the Host name. The client keeps its quota (0) and expiry (0), so the response carries `total=0` and no expiry. The client link file gets the same name, percent-encoded, after the `#`.
 
 The subscription address is `http://192.0.2.1` + the panel's subscription path + the client's subscription ID, written to `/root/vpn/subscription-url.txt` (mode 600). It is plain HTTP inside the encrypted tunnel.
 

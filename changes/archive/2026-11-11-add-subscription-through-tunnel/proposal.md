@@ -31,3 +31,4 @@ The owner's Happ app shows the VPN as a bare profile in a local "Server-List" gr
 ## Open questions
 
 - [TODO-CLARIFY: does Happ fetch a subscription through its own tunnel while it is connected, and does it show a Thai flag as the main icon? Both are checked on the owner's phone after the deploy.]
+- Found on the way: 3x-ui answered 403 to the reserved Host while `subDomain` was set, and Xray's freedom outbound blocked the loopback target. Both are in the design.
