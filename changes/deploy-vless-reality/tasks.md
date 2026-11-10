@@ -4,9 +4,9 @@ Ordered. Each task touches one to three files and has its own check. Tick a task
 
 - [x] 1. Dry-run the panel API, the Xray template and a loopback client on a throwaway panel instance in `/tmp` on the VPS, then remove it. (files: none)
   Check: tunnel exit address is the server's IPv4; the throwaway instance is gone.
-- [ ] 2. Write the deploy script. (files: `scripts/deploy-vpn.sh`; criteria: all)
+- [x] 2. Write the deploy script. (files: `scripts/deploy-vpn.sh`; criteria: all)
   Check: `bash -n scripts/deploy-vpn.sh` passes.
-- [ ] 3. Write the verify scripts. (files: `scripts/verify-vpn.sh`, `scripts/verify-external.sh`; criteria: all tested ones)
+- [x] 3. Write the verify scripts. (files: `scripts/verify-vpn.sh`, `scripts/verify-external.sh`; criteria: all tested ones)
   Check: `bash -n` passes for both.
 - [ ] 4. Run the deploy script on the VPS. (criteria: R-vpn-server-01 to 07, 09.a)
   Check: exit code 0; output holds no secret.
