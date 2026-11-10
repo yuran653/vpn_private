@@ -68,3 +68,12 @@ The verify scripts use the live network, so they are not deterministic in the se
 - The installer and the panel API may change in a later release. Contained by the version pin; a version bump is a new change.
 - The cover site may change its TLS setup. The verify scripts fail when it no longer returns a valid certificate.
 - The loopback client test does not prove the path from the owner's network. The external script checks reachability of 443; the first real connection is the owner's.
+
+## Implementation notes from the first runs
+
+The deploy script ran on the VPS with exit code 0 on the first attempt. Two checks were wrong and were fixed in this change; the server was not at fault in either case:
+
+1. `verify-external.sh` used a bare TCP connect to decide whether a port was open. The workstation's network accepted every connect locally, including to unused ports, so every port looked open. The check now requires an HTTP or TLS answer from the server.
+2. `verify-vpn.sh` piped `apt-config dump` into `grep -q` under `pipefail`. `grep -q` closed the pipe early and the pipeline failed. The output is now captured first.
+
+The deploy script also sets `NEEDRESTART_SUSPEND=1`, so package installs do not print service-restart notices.

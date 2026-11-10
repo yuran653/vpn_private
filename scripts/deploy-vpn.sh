@@ -60,7 +60,7 @@ work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 
 # 1. Packages and unattended upgrades.
-export DEBIAN_FRONTEND=noninteractive
+export DEBIAN_FRONTEND=noninteractive NEEDRESTART_SUSPEND=1
 apt-get update -qq
 apt-get install -y -qq curl jq openssl ca-certificates unattended-upgrades >/dev/null
 cat > "$AUTO_UPGRADES" <<'EOF'

@@ -161,7 +161,9 @@ check R-vpn-server-06.a "Xray access log and DNS log are off" \
     jq -e '.log.access == "none" and .log.dnsLog == false' "$XRAY_CONFIG"
 
 # R-vpn-server-07.a: security updates install without an operator.
-if apt-config dump | grep -q 'APT::Periodic::Unattended-Upgrade "1"' \
+# The dump is captured first: with pipefail, grep -q closing the pipe early fails the pipeline.
+apt_settings=$(apt-config dump)
+if printf '%s\n' "$apt_settings" | grep -q 'APT::Periodic::Unattended-Upgrade "1"' \
     && systemctl is-enabled --quiet unattended-upgrades; then
     pass R-vpn-server-07.a "unattended upgrades are enabled"
 else

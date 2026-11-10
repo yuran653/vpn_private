@@ -8,11 +8,11 @@ Ordered. Each task touches one to three files and has its own check. Tick a task
   Check: `bash -n scripts/deploy-vpn.sh` passes.
 - [x] 3. Write the verify scripts. (files: `scripts/verify-vpn.sh`, `scripts/verify-external.sh`; criteria: all tested ones)
   Check: `bash -n` passes for both.
-- [ ] 4. Run the deploy script on the VPS. (criteria: R-vpn-server-01 to 07, 09.a)
+- [x] 4. Run the deploy script on the VPS. (criteria: R-vpn-server-01 to 07, 09.a)
   Check: exit code 0; output holds no secret.
-- [ ] 5. Run both verify scripts. (criteria: all tested ones)
+- [x] 5. Run both verify scripts. (criteria: all tested ones)
   Check: both print `all checks passed`.
-- [ ] 6. Run the deploy script a second time. (criteria: R-vpn-server-08.a)
+- [x] 6. Run the deploy script a second time. (criteria: R-vpn-server-08.a)
   Check: exit code 0; checksum of the link file unchanged.
 - [ ] 7. Reboot the VPS and run both verify scripts again. (criteria: R-vpn-server-08.c)
   Check: both print `all checks passed`.
