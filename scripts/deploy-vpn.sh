@@ -9,13 +9,14 @@
 #   3. TCP sending tuned for the long-distance path to the clients: BBR
 #      congestion control, fq pacing, larger buffers (ADR-0007)
 #   4. 3x-ui installed from the pinned release, panel on 127.0.0.1 only,
-#      subscription service off
+#      subscription service on 127.0.0.1 only (ADR-0010)
 #   5. Xray template: all client traffic out through Cloudflare WARP (the server
 #      is registered once as a free WARP device, ADR-0008), encrypted DNS,
 #      IPv4-only egress, port-53 capture, no access log
 #   6. one VLESS + Reality + Vision inbound on 443/tcp with one client
 #   7. ufw: 443/tcp allowed, with per-address limits on new connections (ADR-0005)
-#   8. the client link written to /root/vpn/vless-link.txt (mode 600)
+#   8. the client link written to /root/vpn/vless-link.txt (mode 600) and the
+#      subscription address to /root/vpn/subscription-url.txt (mode 600)
 #
 # Usage, on the VPS as root or via sudo:
 #   sudo -n bash deploy-vpn.sh
@@ -28,7 +29,8 @@
 # overwritten on the next run.
 #
 # Prints no secret. Panel credentials stay in /etc/x-ui/install-result.env, the
-# client link in /root/vpn/vless-link.txt and the WARP registration in
+# client link in /root/vpn/vless-link.txt, the subscription address in
+# /root/vpn/subscription-url.txt and the WARP registration in
 # /root/vpn/warp.json, all readable by root only.
 
 set -euo pipefail
@@ -41,11 +43,20 @@ readonly XUI_RESULT=/etc/x-ui/install-result.env
 
 readonly VPN_PORT=443
 readonly REALITY_TARGET=www.samsung.com
-readonly INBOUND_REMARK=th-reality
+# The inbound's name is the profile name the client app shows (ADR-0010).
+readonly INBOUND_REMARK='กรุงเทพฯ cloud.z.com'
 readonly CLIENT_EMAIL=owner
+
+# Subscription (ADR-0010). The service listens on loopback; a connected client
+# reaches it through the tunnel at SUB_ADDRESS, a TEST-NET-1 address that no host
+# answers and that client apps do not treat as a private network.
+readonly SUB_TITLE='VPN ไทย'
+readonly SUB_ADDRESS=192.0.2.1
+readonly SUB_PORT=2096
 
 readonly STATE_DIR=/root/vpn
 readonly LINK_FILE=$STATE_DIR/vless-link.txt
+readonly SUB_URL_FILE=$STATE_DIR/subscription-url.txt
 readonly INSTALL_LOG=$STATE_DIR/install.log
 # Cloudflare WARP (ADR-0008). The registration is made once and kept in
 # WARP_FILE. The endpoint is an address literal, so reaching WARP needs no
@@ -308,15 +319,22 @@ wait_api() {
 }
 wait_api
 
-# Subscription service off: it listens on every interface and is not used.
+# Subscription service (ADR-0010): on, loopback only. The link it writes carries
+# the host's public address, not the Host header of the request, which is the
+# reserved address a client uses to reach the service through the tunnel.
+public_ip=$(ip -4 route get 1.1.1.1 | awk '{for (i = 1; i < NF; i++) if ($i == "src") print $(i + 1)}')
+printf '%s' "$public_ip" | grep -Eq '^([0-9]{1,3}\.){3}[0-9]{1,3}$' || die "could not read the public IPv4 address"
 api_ok "read settings" panel/api/setting/all -X POST | jq '.obj' > "$work/settings.json"
-if [ "$(jq -r '[.subEnable, .subJsonEnable, .subClashEnable] | any' "$work/settings.json")" = true ]; then
-    jq '.subEnable=false | .subJsonEnable=false | .subClashEnable=false' "$work/settings.json" > "$work/settings.new.json"
+jq --arg ip "$public_ip" --arg title "$SUB_TITLE" --argjson port "$SUB_PORT" '
+    .subEnable = true | .subListen = "127.0.0.1" | .subPort = $port | .subDomain = $ip
+    | .subTitle = $title | .subUpdates = 1 | .remarkTemplate = "{{INBOUND}}"
+    | .subJsonEnable = false | .subClashEnable = false' "$work/settings.json" > "$work/settings.new.json"
+if [ "$(jq -S . "$work/settings.json")" != "$(jq -S . "$work/settings.new.json")" ]; then
     api_ok "update settings" panel/api/setting/update -X POST \
         -H 'Content-Type: application/json' -d @"$work/settings.new.json" >/dev/null
     systemctl restart x-ui
     wait_api
-    log "subscription service disabled"
+    log "subscription service enabled on 127.0.0.1:$SUB_PORT"
 fi
 
 # 5. WARP device, registered once (ADR-0008). Client traffic leaves through
@@ -365,9 +383,13 @@ chmod 600 "$WARP_FILE"
 #    - dns: every lookup goes out over DoH through the same outbound, IPv4 answers only
 #    - port 53 from clients is answered by that DNS, whatever resolver they asked
 #    - IPv6 destinations are refused
+#    - sub: a request for the reserved subscription address is redirected to the
+#      subscription service on loopback. It is the only other outbound, it can
+#      reach nothing but loopback, and it is not the default (ADR-0010)
 #    - log.access stays "none": no record of who connected to what
 api_ok "read default template" panel/api/xray/getDefaultJsonConfig | jq \
-    --slurpfile warp "$WARP_FILE" --arg endpoint "$WARP_ENDPOINT" --argjson mtu "$WARP_MTU" '.obj
+    --slurpfile warp "$WARP_FILE" --arg endpoint "$WARP_ENDPOINT" --argjson mtu "$WARP_MTU" \
+    --arg sub_address "$SUB_ADDRESS" --arg sub_port "$SUB_PORT" '.obj
     | .log.access = "none"
     | .log.dnsLog = false
     | .dns = {servers: ["https://1.1.1.1/dns-query", "https://8.8.8.8/dns-query"], queryStrategy: "UseIPv4"}
@@ -376,13 +398,15 @@ api_ok "read default template" panel/api/xray/getDefaultJsonConfig | jq \
             peers: [{publicKey: $warp[0].peer_public_key, endpoint: $endpoint, allowedIPs: ["0.0.0.0/0"]}],
             reserved: $warp[0].reserved, mtu: $mtu, domainStrategy: "ForceIPv4", noKernelTun: true}}]
         + [.outbounds[] | select(.protocol != "freedom")]
-        + [{protocol: "dns", tag: "dns-out"}]
+        + [{protocol: "dns", tag: "dns-out"},
+           {protocol: "freedom", tag: "sub", settings: {redirect: ("127.0.0.1:" + $sub_port)}}]
     | .routing.rules = [.routing.rules[0],
+        {type: "field", ip: [$sub_address], port: "80", outboundTag: "sub"},
         {type: "field", port: "53", outboundTag: "dns-out"},
         {type: "field", ip: ["::/0"], outboundTag: "blocked"}] + .routing.rules[1:]' > "$work/template.json"
 [ "$(jq -r '.routing.rules[0].outboundTag' "$work/template.json")" = api ] \
     || die "default template changed shape: first routing rule is not the api rule"
-[ "$(jq -r '[.outbounds[0].tag, ([.outbounds[] | select(.protocol == "freedom")] | length)] | join(" ")' "$work/template.json")" = "warp 0" ] \
+[ "$(jq -r '[.outbounds[0].tag, ([.outbounds[] | select(.protocol == "freedom" and ((.settings.redirect // "") | startswith("127.0.0.1:") | not))] | length)] | join(" ")' "$work/template.json")" = "warp 0" ] \
     || die "template still has a way out that is not WARP"
 api_ok "save template" panel/api/xray/update -X POST \
     --data-urlencode "xraySetting@$work/template.json" >/dev/null
@@ -426,6 +450,14 @@ if [ -z "$id" ]; then
     log "inbound created on ${VPN_PORT}/tcp"
 else
     log "inbound on ${VPN_PORT}/tcp already exists; keys kept"
+fi
+# The inbound's name is the profile name in the client app. Only the name changes.
+if [ "$(api_ok "read inbound" "panel/api/inbounds/get/$id" | jq -r '.obj.remark')" != "$INBOUND_REMARK" ]; then
+    api_ok "read inbound" "panel/api/inbounds/get/$id" \
+        | jq --arg remark "$INBOUND_REMARK" '.obj | del(.clientStats) | .remark = $remark' > "$work/inbound-rename.json"
+    api_ok "rename inbound" "panel/api/inbounds/update/$id" -X POST \
+        -H 'Content-Type: application/json' -d @"$work/inbound-rename.json" >/dev/null
+    log "inbound renamed to its profile name"
 fi
 
 # 7. Firewall, then restart Xray so the template and inbound are live.
@@ -478,17 +510,25 @@ done
 log "xray listening on ${VPN_PORT}/tcp"
 
 # 8. Client link, built from what the panel stores. Written to a root-only file.
-public_ip=$(ip -4 route get 1.1.1.1 | awk '{for (i = 1; i < NF; i++) if ($i == "src") print $(i + 1)}')
-printf '%s' "$public_ip" | grep -Eq '^([0-9]{1,3}\.){3}[0-9]{1,3}$' || die "could not read the public IPv4 address"
-api_ok "read inbound" "panel/api/inbounds/get/$id" | jq -r --arg ip "$public_ip" --arg email "$CLIENT_EMAIL" '
+api_ok "read inbound" "panel/api/inbounds/get/$id" | jq -r --arg ip "$public_ip" --arg email "$CLIENT_EMAIL" --arg name "$INBOUND_REMARK" '
     .obj as $in
     | ($in.settings.clients[] | select(.email == $email)) as $c
     | $in.streamSettings.realitySettings as $r
-    | "vless://\($c.id)@\($ip):\($in.port)?encryption=none&flow=\($c.flow)&type=tcp&headerType=none&security=reality&sni=\($r.serverNames[0])&fp=\($r.settings.fingerprint)&pbk=\($r.settings.publicKey)&sid=\($r.shortIds[0])&spx=%2F#TH-Reality"' \
+    | "vless://\($c.id)@\($ip):\($in.port)?encryption=none&flow=\($c.flow)&type=tcp&headerType=none&security=reality&sni=\($r.serverNames[0])&fp=\($r.settings.fingerprint)&pbk=\($r.settings.publicKey)&sid=\($r.shortIds[0])&spx=%2F#\($name | @uri)"' \
     > "$LINK_FILE"
 chmod 600 "$LINK_FILE"
 grep -q '^vless://' "$LINK_FILE" || die "client link was not written"
 log "client link written to $LINK_FILE"
+
+# Subscription address: the reserved address a connected client requests, the
+# panel's subscription path and the client's subscription ID.
+sub_path=$(api_ok "read settings" panel/api/setting/all -X POST | jq -r '.obj.subPath')
+sub_id=$(api_ok "read inbound" "panel/api/inbounds/get/$id" \
+    | jq -r --arg email "$CLIENT_EMAIL" '.obj.settings.clients[] | select(.email == $email) | .subId')
+[ -n "$sub_path" ] && [ -n "$sub_id" ] && [ "$sub_id" != null ] || die "subscription path or client subscription ID is missing"
+printf 'http://%s%s%s\n' "$SUB_ADDRESS" "$sub_path" "$sub_id" > "$SUB_URL_FILE"
+chmod 600 "$SUB_URL_FILE"
+log "subscription address written to $SUB_URL_FILE"
 
 log "final state:"
 systemctl is-active x-ui
