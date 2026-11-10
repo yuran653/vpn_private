@@ -24,3 +24,4 @@ One row per decision record in this folder. Files are named `ADR-NNNN-<slug>.md`
 | [ADR-0004](ADR-0004-ipv6-off-in-kernel.md) | IPv6 disabled in the kernel, not by sysctl | accepted | 2026-11-10 |
 | [ADR-0005](ADR-0005-per-address-connection-limits.md) | Per-address connection limits in ufw's before-input chain | accepted | 2026-11-10 |
 | [ADR-0006](ADR-0006-automatic-reboot-after-updates.md) | Automatic reboot after updates that need one | accepted | 2026-11-10 |
+| [ADR-0007](ADR-0007-bbr-congestion-control.md) | BBR congestion control with fq pacing | accepted | 2026-11-10 |

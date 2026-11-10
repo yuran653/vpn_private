@@ -198,6 +198,64 @@ else
     fail R-vpn-server-10.a "per-address connection limits are missing on ${VPN_PORT}/tcp"
 fi
 
+# R-vpn-server-11.a: new TCP connections use BBR congestion control.
+cc=$(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null)
+[ "$cc" = bbr ] \
+    && pass R-vpn-server-11.a "congestion control for new TCP connections is BBR" \
+    || fail R-vpn-server-11.a "congestion control for new TCP connections is '${cc:-unknown}'"
+
+# R-vpn-server-11.b: the server's side of a client connection to the VPN port uses BBR.
+# A request through the temporary client is held open; that client dials the server's
+# own address, so its connections are the ones on the VPN port whose peer is that address.
+cat > "$work/hold.py" <<'PY'
+import socket, struct, sys, time
+s = socket.create_connection(("127.0.0.1", int(sys.argv[1])), timeout=10)
+s.sendall(b"\x05\x01\x00"); assert s.recv(2) == b"\x05\x00"
+s.sendall(b"\x05\x01\x00\x01" + socket.inet_aton("1.1.1.1") + struct.pack(">H", 80))
+assert s.recv(10)[1] == 0
+s.sendall(b"GET / HTTP/1.1\r\nHost: 1.1.1.1\r\n\r\n")
+time.sleep(6)
+PY
+python3 "$work/hold.py" "$SOCKS_PORT" >/dev/null 2>&1 &
+hold_pid=$!
+sleep 2
+tunnel_conns=$(ss -HtinO "sport = :$VPN_PORT and dst $server_ip" 2>/dev/null)
+kill "$hold_pid" 2>/dev/null
+if [ -z "$tunnel_conns" ]; then
+    fail R-vpn-server-11.b "no client connection to the VPN port was found to inspect"
+elif printf '%s\n' "$tunnel_conns" | grep -qvw bbr; then
+    fail R-vpn-server-11.b "a client connection to the VPN port does not use BBR"
+else
+    pass R-vpn-server-11.b "client connections to the VPN port use BBR"
+fi
+
+# R-vpn-server-11.c: the interface that carries the default route paces packets with fq.
+wan_dev=$(ip -4 route show default | awk '{for (i = 1; i < NF; i++) if ($i == "dev") {print $(i + 1); exit}}')
+qdiscs=$(tc qdisc show dev "${wan_dev:-none}" 2>/dev/null)
+if printf '%s\n' "$qdiscs" | grep -q '^qdisc fq ' \
+    && ! printf '%s\n' "$qdiscs" | grep -qv -e '^qdisc mq ' -e '^qdisc fq '; then
+    pass R-vpn-server-11.c "queueing discipline on ${wan_dev} is fq"
+else
+    fail R-vpn-server-11.c "queueing discipline on ${wan_dev:-the default-route interface} is not fq"
+fi
+
+# R-vpn-server-11.d: a TCP connection's send and receive buffers may grow to 16 MB.
+rmem_max=$(sysctl -n net.ipv4.tcp_rmem 2>/dev/null | awk '{print $3}')
+wmem_max=$(sysctl -n net.ipv4.tcp_wmem 2>/dev/null | awk '{print $3}')
+[ "${rmem_max:-0}" -ge 16777216 ] && [ "${wmem_max:-0}" -ge 16777216 ] \
+    && pass R-vpn-server-11.d "TCP buffers may grow to at least 16 MB" \
+    || fail R-vpn-server-11.d "TCP buffer limits are ${rmem_max:-unknown} (receive) and ${wmem_max:-unknown} (send) bytes"
+
+# R-vpn-server-11.e: a connection that was idle keeps its sending rate.
+[ "$(sysctl -n net.ipv4.tcp_slow_start_after_idle 2>/dev/null)" = 0 ] \
+    && pass R-vpn-server-11.e "slow start after idle is off" \
+    || fail R-vpn-server-11.e "slow start after idle is on"
+
+# R-vpn-server-11.f: TCP probes for a smaller packet size when large packets are lost.
+[ "$(sysctl -n net.ipv4.tcp_mtu_probing 2>/dev/null)" = 1 ] \
+    && pass R-vpn-server-11.f "packet size probing after loss of large packets is on" \
+    || fail R-vpn-server-11.f "packet size probing after loss of large packets is off"
+
 # R-vpn-server-08.c (boot half): IPv6 stays off across restarts. The host must have
 # booted with IPv6 disabled in the kernel; a runtime switch alone is undone at boot.
 check R-vpn-server-08.c "kernel booted with IPv6 disabled" \

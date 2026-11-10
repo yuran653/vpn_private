@@ -99,3 +99,20 @@ One address cannot occupy the VPN port with connections.
 
 - **R-vpn-server-10.a** [verified] WHEN the loaded firewall rules are listed THEN new connections to port 443 from one address are dropped beyond 1000 concurrent connections or 100 new connections per second with a burst of 300.
   Test: `scripts/verify-vpn.sh` (R-vpn-server-10.a)
+
+### R-vpn-server-11: TCP sending tuned for the long-distance path
+
+The server sends tunnel traffic with a congestion control that keeps its rate when packets are lost, paces it, and allows buffers large enough for a fast long-distance path.
+
+- **R-vpn-server-11.a** [verified] WHEN the kernel settings are inspected THEN the congestion control for new TCP connections is BBR.
+  Test: `scripts/verify-vpn.sh` (R-vpn-server-11.a)
+- **R-vpn-server-11.b** [verified] WHEN a client connects to port 443 THEN the server's side of that connection uses BBR.
+  Test: `scripts/verify-vpn.sh` (R-vpn-server-11.b)
+- **R-vpn-server-11.c** [verified] WHEN the queueing discipline of the interface that carries the default route is inspected THEN it is `fq`.
+  Test: `scripts/verify-vpn.sh` (R-vpn-server-11.c)
+- **R-vpn-server-11.d** [verified] WHEN the kernel settings are inspected THEN a TCP connection's send buffer and receive buffer may each grow to at least 16 MB.
+  Test: `scripts/verify-vpn.sh` (R-vpn-server-11.d)
+- **R-vpn-server-11.e** [verified] WHEN the kernel settings are inspected THEN a connection that was idle does not go back to slow start.
+  Test: `scripts/verify-vpn.sh` (R-vpn-server-11.e)
+- **R-vpn-server-11.f** [verified] WHEN the kernel settings are inspected THEN TCP probes for a smaller packet size after it detects that large packets are lost on the path.
+  Test: `scripts/verify-vpn.sh` (R-vpn-server-11.f)

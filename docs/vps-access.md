@@ -68,6 +68,10 @@ ssh zcom-th 'sudo -n tail /root/vpn/deploy-run.log'      # repeat until it print
 
 Security updates install every night without an operator. When one needs a reboot, the host reboots itself at 04:00 Asia/Bangkok (ADR-0006); VPN connections drop for about a minute. One address may hold 1000 connections to port 443 and open 100 per second (ADR-0005).
 
+## TCP tuning
+
+The deploy script sets BBR congestion control, `fq` pacing and 16 MB TCP buffer limits for the long path to the clients (ADR-0007), in `/etc/sysctl.d/60-vpn-tcp.conf` and `/etc/modules-load.d/vpn-tcp.conf`. Connections that were open during the run keep the old congestion control until they close; reconnect the client to get the new one.
+
 ## What the server does not defend against
 
 A volumetric DDoS fills the uplink before the firewall sees a packet. Only the provider can absorb it, and Reality cannot sit behind a CDN. The practical recovery is a new IP address from the provider, then a re-run of `deploy-vpn.sh` to rewrite the client link.
