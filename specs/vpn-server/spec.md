@@ -133,3 +133,12 @@ Everything a client sends through the tunnel leaves the server through Cloudflar
   Test: none
 - **R-vpn-server-12.f** [verified] WHEN a client requests Cloudflare's connection report through the tunnel THEN the report names Cloudflare's Bangkok site as the place the request reached Cloudflare.
   Test: `scripts/verify-vpn.sh` (R-vpn-server-12.f)
+
+### R-vpn-server-14: Client link names the server
+
+The client link names the profile `กรุงเทพฯ cloud.z.com`.
+
+- **R-vpn-server-14.a** [verified] WHEN the client link is read THEN the name after `#` is `กรุงเทพฯ cloud.z.com`.
+  Test: `scripts/verify-vpn.sh` (R-vpn-server-14.a)
+- **R-vpn-server-14.b** [untested: no automated test; the hash of the client ID in the link was compared before and after the run] WHEN the deploy script runs on a host that already has the link THEN the key in the link (client ID, public key, short ID) is unchanged.
+  Test: none
