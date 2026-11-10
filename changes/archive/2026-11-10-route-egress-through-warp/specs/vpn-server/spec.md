@@ -30,6 +30,14 @@ No traffic leaves the server over IPv6, from the host or from a client.
 - **R-vpn-server-02.c** WHEN a client requests a dual-stack site through the tunnel THEN the site sees an IPv4 address.
 - **R-vpn-server-02.d** WHEN a client sends an AAAA query through the tunnel THEN the answer contains no address.
 
+### R-vpn-server-05: Panel not discoverable
+
+The management panel and its subscription service cannot be found or reached from the internet.
+
+- **R-vpn-server-05.a** WHEN the host's listening sockets are listed THEN only SSH and port 443 listen on a public address, apart from the UDP socket the proxy holds open to send its WARP tunnel traffic.
+- **R-vpn-server-05.b** WHEN a host on the internet connects to the panel port, or to the usual panel and subscription ports, THEN the connection is not accepted.
+- **R-vpn-server-05.c** WHEN the firewall rules are listed THEN incoming traffic is denied except SSH and 443/tcp.
+
 ### R-vpn-server-09: Secrets stay on the server
 
 - **R-vpn-server-09.a** WHEN the deploy script runs THEN its output contains no panel credential, API token, private key, WARP key or token, or client link, and the files holding them are readable by root only.

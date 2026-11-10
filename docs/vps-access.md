@@ -8,7 +8,7 @@ Instructions for coding agents (Kimi Code and similar) operating in this repo.
 |---|---|
 | VPS | Z.com Cloud, BKK4 zone (Bangkok), plan C2 (2 vCPU / 4 GB / 50 GB) |
 | OS | Ubuntu 24.04 LTS, bare |
-| Global IP | geolocation-verified Thailand (`curl ifconfig.co/country` → `TH`) |
+| Global IP | registered to Thailand, but geo-IP databases disagree (2026-11-10): ipinfo, ip-api and Cloudflare say Thailand, ifconfig.co says Japan, Google says Myanmar. Client traffic therefore leaves through Cloudflare WARP (ADR-0008). |
 | SSH | key-only, user `ubuntu`, alias `zcom-th`, private key `~/.ssh/zcom-th-vpn` (keep secret), public key `~/.ssh/zcom-th-vpn.pub` |
 | Root | SSH login as `root` is **refused** by sshd (`PermitRootLogin no`, set by `scripts/harden-vps.sh`). `su root` works via console password (fallback only). Use `sudo` for privileged commands. |
 
@@ -72,6 +72,15 @@ Security updates install every night without an operator. When one needs a reboo
 
 The deploy script sets BBR congestion control, `fq` pacing and 16 MB TCP buffer limits for the long path to the clients (ADR-0007), in `/etc/sysctl.d/60-vpn-tcp.conf` and `/etc/modules-load.d/vpn-tcp.conf`. Connections that were open during the run keep the old congestion control until they close; reconnect the client to get the new one.
 
+## Exit through Cloudflare WARP
+
+Client traffic does not leave from the server's own address. The deploy script registers the server once as a free WARP device and Xray sends everything through that tunnel (ADR-0008). Sites see a Cloudflare address placed in Thailand. `scripts/verify-vpn.sh` checks it (R-vpn-server-12).
+
+- The registration is in `/root/vpn/warp.json`. A re-run of the deploy script keeps it.
+- When WARP is unreachable, clients connect but no site loads. Nothing falls back to the server's own address. Check with `ssh zcom-th 'sudo -n bash /tmp/verify-vpn.sh'` (copy the script first): R-vpn-server-12.a fails while WARP is down.
+- If Cloudflare has dropped the registration, move `/root/vpn/warp.json` aside and re-run the deploy script; it registers a new device. Registering accepts Cloudflare's terms of service.
+- Clients keep the same link. They still connect to the server's own address on port 443.
+
 ## What the server does not defend against
 
 A volumetric DDoS fills the uplink before the firewall sees a packet. Only the provider can absorb it, and Reality cannot sit behind a CDN. The practical recovery is a new IP address from the provider, then a re-run of `deploy-vpn.sh` to rewrite the client link.
@@ -83,6 +92,7 @@ Secrets stay on the VPS, readable by root only:
 | Client link (`vless://...`) | `/root/vpn/vless-link.txt` |
 | Panel user, password, port, path and API token | `/etc/x-ui/install-result.env` |
 | Installer output | `/root/vpn/install.log` |
+| WARP registration (private key, device id, token) | `/root/vpn/warp.json` |
 | Original netplan files | `/root/vpn/netplan-backup/` |
 
 To show the client link: `ssh zcom-th 'sudo -n cat /root/vpn/vless-link.txt'`. Do not paste it into the repo (rule 2).
@@ -101,4 +111,4 @@ The Xray template is owned by `deploy-vpn.sh`; edits made to it in the panel are
 ssh zcom-th 'hostname && curl -s ifconfig.co/country && uname -r'
 ```
 
-Expected: `ubuntu@...`, `TH`, kernel `6.x`. If country is not `TH`, stop and report (exit node invalid).
+Expected: the hostname, a country, kernel `6.x`. Since 2026-11-10 `ifconfig.co` answers `Japan` for this address; the owner knows (ADR-0008). The host's own country no longer decides whether the exit is valid: clients leave through WARP, and `scripts/verify-vpn.sh` (R-vpn-server-12.b) fails when that exit is not in Thailand. If that check fails, stop and report.

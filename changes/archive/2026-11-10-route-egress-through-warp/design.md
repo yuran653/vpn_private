@@ -48,6 +48,7 @@ All checks are in `scripts/verify-vpn.sh`, run on the VPS, each labelled with it
 |---|---|
 | R-vpn-server-01.a | exit address through the tunnel is IPv4 and differs from the server's |
 | R-vpn-server-02.c | dual-stack site sees an IPv4 address |
+| R-vpn-server-05.a | public TCP listeners are SSH and 443; public UDP sockets belong to the proxy only |
 | R-vpn-server-12.a | `cdn-cgi/trace` through the tunnel has `warp=on` |
 | R-vpn-server-12.b | `cdn-cgi/trace` through the tunnel has `loc=TH` |
 | R-vpn-server-12.c | running config has no `freedom` outbound and its first outbound is `warp` |
@@ -61,4 +62,4 @@ All checks are in `scripts/verify-vpn.sh`, run on the VPS, each labelled with it
 - Cloudflare changes the unofficial registration API: only a first deploy on a new host is affected; an existing `warp.json` keeps working.
 - Throughput: the tunnel runs in user space on 2 vCPUs. Measured after the deploy and recorded in the ADR.
 - Some sites show more captchas to WARP addresses.
-- The user-space tunnel opens a UDP socket; if it shows as a public listener, R-vpn-server-05.a is re-examined inside this change.
+- The user-space tunnel holds an unconnected UDP socket on a random port of every address (seen after the first deploy). It is the tunnel's sending socket. ufw denies new incoming traffic to it and admits only replies from the WARP endpoint. R-vpn-server-05.a is modified to name this one exception; its check now requires that the TCP listeners are exactly SSH and 443 and that every public UDP socket belongs to the proxy.
