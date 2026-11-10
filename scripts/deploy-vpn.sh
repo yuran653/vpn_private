@@ -10,7 +10,9 @@
 #      congestion control, fq pacing, larger buffers (ADR-0007)
 #   4. 3x-ui installed from the pinned release, panel on 127.0.0.1 only,
 #      subscription service off
-#   5. Xray template: encrypted DNS, IPv4-only egress, port-53 capture, no access log
+#   5. Xray template: all client traffic out through Cloudflare WARP (the server
+#      is registered once as a free WARP device, ADR-0008), encrypted DNS,
+#      IPv4-only egress, port-53 capture, no access log
 #   6. one VLESS + Reality + Vision inbound on 443/tcp with one client
 #   7. ufw: 443/tcp allowed, with per-address limits on new connections (ADR-0005)
 #   8. the client link written to /root/vpn/vless-link.txt (mode 600)
@@ -25,8 +27,9 @@
 # The Xray template is owned by this script: edits made to it in the panel are
 # overwritten on the next run.
 #
-# Prints no secret. Panel credentials stay in /etc/x-ui/install-result.env and
-# the client link in /root/vpn/vless-link.txt, both readable by root only.
+# Prints no secret. Panel credentials stay in /etc/x-ui/install-result.env, the
+# client link in /root/vpn/vless-link.txt and the WARP registration in
+# /root/vpn/warp.json, all readable by root only.
 
 set -euo pipefail
 
@@ -44,6 +47,13 @@ readonly CLIENT_EMAIL=owner
 readonly STATE_DIR=/root/vpn
 readonly LINK_FILE=$STATE_DIR/vless-link.txt
 readonly INSTALL_LOG=$STATE_DIR/install.log
+# Cloudflare WARP (ADR-0008). The registration is made once and kept in
+# WARP_FILE. The endpoint is an address literal, so reaching WARP needs no
+# name lookup; 1280 is the packet size Cloudflare's own client uses.
+readonly WARP_FILE=$STATE_DIR/warp.json
+readonly WARP_API=https://api.cloudflareclient.com/v0a2158
+readonly WARP_ENDPOINT=162.159.192.1:2408
+readonly WARP_MTU=1280
 readonly SYSCTL_CONF=/etc/sysctl.d/60-vpn-disable-ipv6.conf
 readonly GRUB_CONF=/etc/default/grub.d/60-vpn-disable-ipv6.cfg
 readonly NETPLAN_BACKUP=$STATE_DIR/netplan-backup
@@ -306,23 +316,71 @@ if [ "$(jq -r '[.subEnable, .subJsonEnable, .subClashEnable] | any' "$work/setti
     log "subscription service disabled"
 fi
 
-# 5. Xray template: the panel's default plus this project's rules.
-#    - dns: every lookup goes out over DoH, IPv4 answers only
-#    - direct: destinations are resolved by that DNS and dialled over IPv4 only
+# 5. WARP device, registered once (ADR-0008). Client traffic leaves through
+#    Cloudflare WARP, because Google places this server's own address in a
+#    country where some of its services are not offered. Registering accepts
+#    Cloudflare's terms of service for the owner. The key pair is made here; the
+#    answer carries the tunnel address, the peer key and the three "reserved"
+#    bytes that Cloudflare expects in every packet. Nothing of it is printed.
+if [ ! -s "$WARP_FILE" ]; then
+    openssl genpkey -algorithm X25519 -outform DER -out "$work/warp.key"
+    warp_private=$(tail -c 32 "$work/warp.key" | base64)
+    warp_public=$(openssl pkey -inform DER -in "$work/warp.key" -pubout -outform DER | tail -c 32 | base64)
+    jq -n --arg key "$warp_public" --arg tos "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)" \
+        '{key: $key, tos: $tos, type: "PC", model: "PC", locale: "en_US", install_id: "", fcm_token: ""}' \
+        > "$work/warp-request.json"
+    curl -fsS --retry 3 --max-time 30 -X POST "$WARP_API/reg" \
+        -H 'CF-Client-Version: a-6.30-3596' -H 'User-Agent: okhttp/3.12.1' \
+        -H 'Content-Type: application/json' -d @"$work/warp-request.json" \
+        -o "$work/warp-answer.json" || die "WARP registration request failed"
+    warp_reserved=$(jq -r '.config.client_id // empty' "$work/warp-answer.json" | base64 -d 2>/dev/null \
+        | od -An -tu1 | xargs | tr ' ' ',')
+    printf '%s' "$warp_reserved" | grep -Eq '^[0-9]+,[0-9]+,[0-9]+$' \
+        || die "WARP registration answer has no usable client_id"
+    jq -e --arg private "$warp_private" --argjson reserved "[$warp_reserved]" '{
+        private_key: $private, device_id: .id, token: .token,
+        address: .config.interface.addresses.v4,
+        peer_public_key: .config.peers[0].public_key,
+        reserved: $reserved}
+        | select((.address | type) == "string" and (.peer_public_key | type) == "string")' \
+        "$work/warp-answer.json" > "$work/warp.json" \
+        || die "WARP registration answer is incomplete"
+    jq -r '.address' "$work/warp.json" | grep -Eq '^([0-9]{1,3}\.){3}[0-9]{1,3}$' \
+        || die "WARP registration gave no IPv4 tunnel address"
+    install -m 600 "$work/warp.json" "$WARP_FILE"
+    log "WARP device registered"
+else
+    log "WARP device already registered; kept"
+fi
+chmod 600 "$WARP_FILE"
+
+#    Xray template: the panel's default plus this project's rules.
+#    - warp: the only way out. It is the first outbound, so it carries whatever
+#      the rules do not block, and the default "direct" outbound is removed:
+#      when WARP is down a request fails, it never leaves from this server's
+#      own address. IPv4 only; the tunnel runs inside Xray, not as a host interface
+#    - dns: every lookup goes out over DoH through the same outbound, IPv4 answers only
 #    - port 53 from clients is answered by that DNS, whatever resolver they asked
 #    - IPv6 destinations are refused
 #    - log.access stays "none": no record of who connected to what
-api_ok "read default template" panel/api/xray/getDefaultJsonConfig | jq '.obj
+api_ok "read default template" panel/api/xray/getDefaultJsonConfig | jq \
+    --slurpfile warp "$WARP_FILE" --arg endpoint "$WARP_ENDPOINT" --argjson mtu "$WARP_MTU" '.obj
     | .log.access = "none"
     | .log.dnsLog = false
-    | .dns = {servers: ["https+local://1.1.1.1/dns-query", "https+local://8.8.8.8/dns-query"], queryStrategy: "UseIPv4"}
-    | (.outbounds[] | select(.tag == "direct") | .settings.domainStrategy) = "ForceIPv4"
-    | .outbounds += [{protocol: "dns", tag: "dns-out"}]
+    | .dns = {servers: ["https://1.1.1.1/dns-query", "https://8.8.8.8/dns-query"], queryStrategy: "UseIPv4"}
+    | .outbounds = [{protocol: "wireguard", tag: "warp", settings: {
+            secretKey: $warp[0].private_key, address: [$warp[0].address + "/32"],
+            peers: [{publicKey: $warp[0].peer_public_key, endpoint: $endpoint, allowedIPs: ["0.0.0.0/0"]}],
+            reserved: $warp[0].reserved, mtu: $mtu, domainStrategy: "ForceIPv4", noKernelTun: true}}]
+        + [.outbounds[] | select(.protocol != "freedom")]
+        + [{protocol: "dns", tag: "dns-out"}]
     | .routing.rules = [.routing.rules[0],
         {type: "field", port: "53", outboundTag: "dns-out"},
         {type: "field", ip: ["::/0"], outboundTag: "blocked"}] + .routing.rules[1:]' > "$work/template.json"
 [ "$(jq -r '.routing.rules[0].outboundTag' "$work/template.json")" = api ] \
     || die "default template changed shape: first routing rule is not the api rule"
+[ "$(jq -r '[.outbounds[0].tag, ([.outbounds[] | select(.protocol == "freedom")] | length)] | join(" ")' "$work/template.json")" = "warp 0" ] \
+    || die "template still has a way out that is not WARP"
 api_ok "save template" panel/api/xray/update -X POST \
     --data-urlencode "xraySetting@$work/template.json" >/dev/null
 log "xray template applied"

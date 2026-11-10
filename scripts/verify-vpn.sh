@@ -85,11 +85,17 @@ done
 
 via() { curl -s --max-time 20 --socks5-hostname "127.0.0.1:$SOCKS_PORT" "$@"; }
 
-# R-vpn-server-01.a: a client using the issued link reaches the internet from the server's IPv4 address.
+# R-vpn-server-01.a: a client using the issued link reaches the internet, and the site
+# sees an IPv4 address that is not the server's own (traffic leaves through WARP).
+is_ipv4() { printf '%s' "$1" | grep -Eq '^([0-9]{1,3}\.){3}[0-9]{1,3}$'; }
 exit_ip=$(via https://api.ipify.org)
-[ -n "$exit_ip" ] && [ "$exit_ip" = "$server_ip" ] \
-    && pass R-vpn-server-01.a "tunnel works; exit address is the server's IPv4" \
-    || fail R-vpn-server-01.a "tunnel exit address is '${exit_ip:-none}', expected the server's IPv4"
+if ! is_ipv4 "$exit_ip"; then
+    fail R-vpn-server-01.a "tunnel exit address is '${exit_ip:-none}', expected an IPv4 address"
+elif [ "$exit_ip" = "$server_ip" ]; then
+    fail R-vpn-server-01.a "tunnel exit address is the server's own address"
+else
+    pass R-vpn-server-01.a "tunnel works; exit address is IPv4 and not the server's own"
+fi
 
 # R-vpn-server-02.a: the host has no global IPv6 address and cannot reach IPv6.
 if ip -6 addr show scope global | grep -q inet6; then
@@ -111,8 +117,9 @@ fi
 seen=$(via https://ifconfig.co/ip)
 case "$seen" in
     *:*) fail R-vpn-server-02.c "dual-stack site saw an IPv6 address" ;;
-    "$server_ip") pass R-vpn-server-02.c "dual-stack site saw the server's IPv4 address" ;;
-    *) fail R-vpn-server-02.c "dual-stack site saw '${seen:-nothing}'" ;;
+    *) is_ipv4 "$seen" \
+        && pass R-vpn-server-02.c "dual-stack site saw an IPv4 address" \
+        || fail R-vpn-server-02.c "dual-stack site saw '${seen:-nothing}'" ;;
 esac
 
 # R-vpn-server-02.d: an AAAA query through the tunnel returns no IPv6 address.
@@ -131,6 +138,39 @@ a=$(python3 "$work/dnsprobe.py" "$SOCKS_PORT" 192.0.2.53 example.com 1 2>/dev/nu
 # R-vpn-server-03.b: every resolver the server uses for tunnel traffic is DNS-over-HTTPS.
 check R-vpn-server-03.b "all tunnel DNS resolvers are DNS-over-HTTPS" \
     jq -e '(.dns.servers | length) > 0 and (.dns.servers | all(type == "string" and startswith("https")))' "$XRAY_CONFIG"
+
+# R-vpn-server-12.a: client traffic leaves through Cloudflare WARP. Cloudflare's
+# connection report says so itself.
+trace=$(via https://www.cloudflare.com/cdn-cgi/trace)
+warp_state=$(printf '%s\n' "$trace" | sed -n 's/^warp=//p')
+case "$warp_state" in
+    on|plus) pass R-vpn-server-12.a "Cloudflare reports the tunnel exit as WARP" ;;
+    *) fail R-vpn-server-12.a "Cloudflare reports warp='${warp_state:-no answer}' for the tunnel exit" ;;
+esac
+
+# R-vpn-server-12.b: the exit is placed in Thailand.
+exit_country=$(printf '%s\n' "$trace" | sed -n 's/^loc=//p')
+[ "$exit_country" = TH ] \
+    && pass R-vpn-server-12.b "tunnel exit is placed in Thailand" \
+    || fail R-vpn-server-12.b "tunnel exit is placed in '${exit_country:-unknown}', expected TH"
+
+# R-vpn-server-12.c: WARP is the only way out. With no outbound that sends from the
+# server's own address, a request fails when WARP is unreachable instead of leaking.
+check R-vpn-server-12.c "no outbound sends from the server's own address; WARP is the default" \
+    jq -e '.outbounds[0].protocol == "wireguard" and .outbounds[0].tag == "warp"
+        and ([.outbounds[] | select(.protocol == "freedom")] | length) == 0' "$XRAY_CONFIG"
+
+# R-vpn-server-12.d: YouTube Music opens through the tunnel. From an address that
+# Google places in an unsupported country it answers with a "not available" page.
+ytm=$(via -L -A 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36' \
+    'https://music.youtube.com/?hl=en')
+if [ -z "$ytm" ]; then
+    fail R-vpn-server-12.d "YouTube Music gave no answer through the tunnel"
+elif printf '%s' "$ytm" | grep -qi 'not available in your'; then
+    fail R-vpn-server-12.d "YouTube Music says it is not available at the tunnel exit"
+else
+    pass R-vpn-server-12.d "YouTube Music is available at the tunnel exit"
+fi
 
 # R-vpn-server-04.a (inside half): a TLS client without the key gets the cover site's certificate.
 subject=$(echo | timeout 15 openssl s_client -connect "127.0.0.1:$VPN_PORT" \
