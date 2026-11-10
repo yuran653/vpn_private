@@ -80,6 +80,7 @@ Client traffic does not leave from the server's own address. The deploy script r
 - When WARP is unreachable, clients connect but no site loads. Nothing falls back to the server's own address. Check with `ssh zcom-th 'sudo -n bash /tmp/verify-vpn.sh'` (copy the script first): R-vpn-server-12.a fails while WARP is down.
 - If Cloudflare has dropped the registration, move `/root/vpn/warp.json` aside and re-run the deploy script; it registers a new device. Registering accepts Cloudflare's terms of service.
 - Clients keep the same link. They still connect to the server's own address on port 443.
+- The tunnel goes to `188.114.97.1`, which Cloudflare's Bangkok site answers from this host (ADR-0009). If Cloudflare routes that address to another site, R-vpn-server-12.f fails and names the site. Traffic is then slower, but the exit is still valid while R-vpn-server-12.a to 12.d pass.
 
 ## What the server does not defend against
 

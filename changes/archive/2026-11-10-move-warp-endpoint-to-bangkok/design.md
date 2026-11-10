@@ -4,7 +4,7 @@
 
 Change the one constant that names the WARP endpoint in `scripts/deploy-vpn.sh` from `162.159.192.1:2408` to `188.114.97.1:2408`, re-run the script on the VPS, and add a check to `scripts/verify-vpn.sh` that Cloudflare's connection report names the Bangkok site. The WARP registration, keys, MTU and every other outbound setting stay as they are.
 
-Both addresses are Cloudflare anycast addresses for WARP. Which site answers depends on the route from the host. Measured from the VPS on 2026-11-11:
+Both addresses are Cloudflare anycast addresses for WARP. Which site answers depends on the route from the host. Measured from the VPS on 2026-11-10:
 
 | Endpoint | Round trip | Result with this server's registration |
 |---|---|---|
@@ -32,7 +32,7 @@ None. `/root/vpn/warp.json` is read, not rewritten. The client link is unchanged
 | Alternative | Why rejected |
 |---|---|
 | Keep `162.159.192.1` | 27 ms added to every round trip of every connection. |
-| `162.159.193.1`, the other 1.4 ms address | Passed no traffic in the test on 2026-11-11. |
+| `162.159.193.1`, the other 1.4 ms address | Passed no traffic in the test on 2026-11-10. |
 | Pick the endpoint at deploy time by measuring round trips | The nearest address is not always a working one (`162.159.193.1`), so a probe would also need a traffic test; more moving parts than one constant. |
 | A second WARP registration for a side-by-side test | Accepts Cloudflare's terms again, and still does not measure what a client device gets. |
 

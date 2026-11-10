@@ -2,7 +2,7 @@
 
 ## Why
 
-The server sends its WARP tunnel to `162.159.192.1`. From this host that address is answered by Cloudflare's Singapore site, 27 ms away, while Cloudflare's Bangkok site is 1.4 ms away. Every round trip of every client connection pays the detour: on 2026-11-11 a new HTTPS connection through the tunnel took about 200 ms to set up on the server, against about 100 ms through a Bangkok endpoint. The owner asked on 2026-11-11 for a trial switch of the live server, measured from a client device.
+The server sends its WARP tunnel to `162.159.192.1`. From this host that address is answered by Cloudflare's Singapore site, 27 ms away, while Cloudflare's Bangkok site is 1.4 ms away. Every round trip of every client connection pays the detour: on 2026-11-10 a new HTTPS connection through the tunnel took about 200 ms to set up on the server, against about 100 ms through a Bangkok endpoint. The owner asked on 2026-11-10 for a trial switch of the live server, measured from a client device.
 
 ## What changes
 

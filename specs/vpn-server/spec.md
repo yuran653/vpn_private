@@ -119,7 +119,7 @@ The server sends tunnel traffic with a congestion control that keeps its rate wh
 
 ### R-vpn-server-12: Client traffic leaves through Cloudflare WARP
 
-Everything a client sends through the tunnel leaves the server through Cloudflare WARP, exits in Thailand, and never leaves from the server's own address.
+Everything a client sends through the tunnel leaves the server through Cloudflare WARP, enters Cloudflare at its Bangkok site, exits in Thailand, and never leaves from the server's own address.
 
 - **R-vpn-server-12.a** [verified] WHEN a client requests Cloudflare's connection report through the tunnel THEN the report says the request came through WARP.
   Test: `scripts/verify-vpn.sh` (R-vpn-server-12.a)
@@ -131,3 +131,5 @@ Everything a client sends through the tunnel leaves the server through Cloudflar
   Test: `scripts/verify-vpn.sh` (R-vpn-server-12.d)
 - **R-vpn-server-12.e** [untested: no automated test; the script was run twice on the VPS and the checksum of the registration file compared] WHEN the deploy script runs a second time on the same host THEN the WARP registration is kept, not made again.
   Test: none
+- **R-vpn-server-12.f** [verified] WHEN a client requests Cloudflare's connection report through the tunnel THEN the report names Cloudflare's Bangkok site as the place the request reached Cloudflare.
+  Test: `scripts/verify-vpn.sh` (R-vpn-server-12.f)
