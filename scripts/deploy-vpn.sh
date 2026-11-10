@@ -6,12 +6,14 @@
 #   1. unattended security upgrades on, pending ones installed now, and an
 #      automatic reboot at 04:00 server time when an update needs one (ADR-0006)
 #   2. IPv6 disabled on the host (kernel parameter; needs one reboot after the first run)
-#   3. 3x-ui installed from the pinned release, panel on 127.0.0.1 only,
+#   3. TCP sending tuned for the long-distance path to the clients: BBR
+#      congestion control, fq pacing, larger buffers (ADR-0007)
+#   4. 3x-ui installed from the pinned release, panel on 127.0.0.1 only,
 #      subscription service off
-#   4. Xray template: encrypted DNS, IPv4-only egress, port-53 capture, no access log
-#   5. one VLESS + Reality + Vision inbound on 443/tcp with one client
-#   6. ufw: 443/tcp allowed, with per-address limits on new connections (ADR-0005)
-#   7. the client link written to /root/vpn/vless-link.txt (mode 600)
+#   5. Xray template: encrypted DNS, IPv4-only egress, port-53 capture, no access log
+#   6. one VLESS + Reality + Vision inbound on 443/tcp with one client
+#   7. ufw: 443/tcp allowed, with per-address limits on new connections (ADR-0005)
+#   8. the client link written to /root/vpn/vless-link.txt (mode 600)
 #
 # Usage, on the VPS as root or via sudo:
 #   sudo -n bash deploy-vpn.sh
@@ -48,6 +50,11 @@ readonly NETPLAN_BACKUP=$STATE_DIR/netplan-backup
 readonly AUTO_UPGRADES=/etc/apt/apt.conf.d/20auto-upgrades
 readonly AUTO_REBOOT=/etc/apt/apt.conf.d/52vpn-auto-reboot
 readonly AUTO_REBOOT_TIME=04:00
+readonly TCP_SYSCTL_CONF=/etc/sysctl.d/60-vpn-tcp.conf
+readonly TCP_MODULES_CONF=/etc/modules-load.d/vpn-tcp.conf
+# Upper limit of one TCP connection's send and receive buffer. The kernel grows
+# a buffer towards it only while the connection needs it (ADR-0007).
+readonly TCP_BUFFER_MAX=16777216
 readonly UFW_BEFORE=/etc/ufw/before.rules
 readonly LIMITS_MARKER='vpn-server port limits'
 # One address may hold this many connections to the VPN port at once, and open
@@ -188,7 +195,50 @@ reboot_needed=""
 grep -qw 'ipv6.disable=1' /proc/cmdline || reboot_needed=yes
 log "IPv6 disabled"
 
-# 3. 3x-ui, pinned. The installer prints the panel credentials, so its output
+# 3. TCP sending tuned for the long-distance path to the clients (ADR-0007).
+#    - BBR sets the sending rate from measured bandwidth and round-trip time,
+#      so a lost packet does not halve it the way the default (CUBIC) does
+#    - fq paces the packets BBR sends
+#    - buffers may grow to 16 MB, enough to fill a fast link at a 200 ms round trip
+#    - a connection that was idle resumes at its previous rate
+#    - when large packets vanish on the path, TCP tries smaller ones
+#    The modules are listed for boot, so the settings file finds them loaded.
+printf 'tcp_bbr\nsch_fq\n' > "$TCP_MODULES_CONF"
+chmod 644 "$TCP_MODULES_CONF"
+modprobe tcp_bbr || die "kernel module tcp_bbr is not available"
+modprobe sch_fq || die "kernel module sch_fq is not available"
+cat > "$TCP_SYSCTL_CONF" <<EOF
+net.core.default_qdisc = fq
+net.ipv4.tcp_congestion_control = bbr
+net.ipv4.tcp_rmem = 4096 131072 $TCP_BUFFER_MAX
+net.ipv4.tcp_wmem = 4096 16384 $TCP_BUFFER_MAX
+net.ipv4.tcp_slow_start_after_idle = 0
+net.ipv4.tcp_mtu_probing = 1
+EOF
+chmod 644 "$TCP_SYSCTL_CONF"
+sysctl -q -p "$TCP_SYSCTL_CONF"
+[ "$(sysctl -n net.ipv4.tcp_congestion_control)" = bbr ] || die "BBR congestion control did not take effect"
+# The default queueing discipline applies only to queues created from now on.
+# The interface that carries the default route gets it now; replacing the root
+# of a multi-queue interface recreates its per-queue children with the default.
+wan_dev=$(ip -4 route show default | awk '{for (i = 1; i < NF; i++) if ($i == "dev") {print $(i + 1); exit}}')
+[ -n "$wan_dev" ] || die "could not find the interface of the default route"
+qdisc_is_fq() { ! tc qdisc show dev "$wan_dev" | grep -qv -e '^qdisc mq ' -e '^qdisc fq '; }
+if ! qdisc_is_fq; then
+    if [ "$(find "/sys/class/net/$wan_dev/queues" -maxdepth 1 -name 'tx-*' | wc -l)" -gt 1 ]; then
+        tc qdisc replace dev "$wan_dev" root mq
+    else
+        tc qdisc replace dev "$wan_dev" root fq
+    fi
+fi
+if qdisc_is_fq; then
+    log "TCP tuned: BBR congestion control, fq pacing on $wan_dev"
+else
+    reboot_needed_qdisc=yes
+    log "TCP tuned: BBR congestion control; fq pacing on $wan_dev starts at the next reboot"
+fi
+
+# 4. 3x-ui, pinned. The installer prints the panel credentials, so its output
 #    goes to a root-only log, never to this script's output.
 installed_version=""
 [ -x "$XUI_BIN" ] && installed_version=$("$XUI_BIN" -v 2>/dev/null | head -n1 || true)
@@ -256,7 +306,7 @@ if [ "$(jq -r '[.subEnable, .subJsonEnable, .subClashEnable] | any' "$work/setti
     log "subscription service disabled"
 fi
 
-# 4. Xray template: the panel's default plus this project's rules.
+# 5. Xray template: the panel's default plus this project's rules.
 #    - dns: every lookup goes out over DoH, IPv4 answers only
 #    - direct: destinations are resolved by that DNS and dialled over IPv4 only
 #    - port 53 from clients is answered by that DNS, whatever resolver they asked
@@ -277,7 +327,7 @@ api_ok "save template" panel/api/xray/update -X POST \
     --data-urlencode "xraySetting@$work/template.json" >/dev/null
 log "xray template applied"
 
-# 5. Inbound. Created once; keys and the client ID are never regenerated.
+# 6. Inbound. Created once; keys and the client ID are never regenerated.
 inbound_id() {
     api_ok "list inbounds" panel/api/inbounds/list \
         | jq -r --argjson p "$VPN_PORT" '[.obj[] | select(.port == $p)][0].id // empty'
@@ -317,7 +367,7 @@ else
     log "inbound on ${VPN_PORT}/tcp already exists; keys kept"
 fi
 
-# 6. Firewall, then restart Xray so the template and inbound are live.
+# 7. Firewall, then restart Xray so the template and inbound are live.
 ufw allow "${VPN_PORT}/tcp" comment 'VLESS Reality' >/dev/null
 
 # Per-address limits on new connections to the VPN port, as one marked block at
@@ -366,7 +416,7 @@ done
 [ -n "$listening" ] || die "xray is not listening on ${VPN_PORT}/tcp: $(api panel/api/xray/getXrayResult | jq -r '.obj')"
 log "xray listening on ${VPN_PORT}/tcp"
 
-# 7. Client link, built from what the panel stores. Written to a root-only file.
+# 8. Client link, built from what the panel stores. Written to a root-only file.
 public_ip=$(ip -4 route get 1.1.1.1 | awk '{for (i = 1; i < NF; i++) if ($i == "src") print $(i + 1)}')
 printf '%s' "$public_ip" | grep -Eq '^([0-9]{1,3}\.){3}[0-9]{1,3}$' || die "could not read the public IPv4 address"
 api_ok "read inbound" "panel/api/inbounds/get/$id" | jq -r --arg ip "$public_ip" --arg email "$CLIENT_EMAIL" '
@@ -384,6 +434,9 @@ systemctl is-active x-ui
 ufw status | sed -n '1,12p'
 if [ -n "$reboot_needed" ]; then
     log "REBOOT NEEDED: IPv6 is off now, but stays off across restarts only after one reboot"
+fi
+if [ -n "${reboot_needed_qdisc:-}" ]; then
+    log "REBOOT NEEDED: fq pacing on the network interface starts only after a reboot"
 fi
 if [ -e /var/run/reboot-required ]; then
     log "REBOOT NEEDED: an installed update takes effect only after a reboot (automatic at $AUTO_REBOOT_TIME otherwise)"
