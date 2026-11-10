@@ -1,6 +1,6 @@
 # ADR-0008: Client traffic leaves through Cloudflare WARP
 
-- Status: accepted
+- Status: accepted; the "Do not" line is narrowed by ADR-0010
 - Date: 2026-11-10
 - Supersedes: none
 - Change: `changes/archive/2026-11-10-route-egress-through-warp/`
@@ -42,4 +42,4 @@ Measured on 2026-11-10 with a client on the VPS, 100 MB from a Singapore test se
 
 ## Do not
 
-Do not add a `freedom` outbound to the Xray template or route client traffic out from the server's own address: Google places that address in Myanmar, and a second way out leaks when WARP is down. (ADR-0008)
+Do not add a `freedom` outbound to the Xray template that can reach anything but the subscription service on loopback, or route client traffic out from the server's own address: Google places that address in Myanmar, and a second way out leaks when WARP is down. (ADR-0008, ADR-0010)
