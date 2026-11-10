@@ -154,6 +154,13 @@ exit_country=$(printf '%s\n' "$trace" | sed -n 's/^loc=//p')
     && pass R-vpn-server-12.b "tunnel exit is placed in Thailand" \
     || fail R-vpn-server-12.b "tunnel exit is placed in '${exit_country:-unknown}', expected TH"
 
+# R-vpn-server-12.f: the tunnel reaches Cloudflare at its Bangkok site, not at a
+# distant one (ADR-0009). The same report names the site.
+exit_site=$(printf '%s\n' "$trace" | sed -n 's/^colo=//p')
+[ "$exit_site" = BKK ] \
+    && pass R-vpn-server-12.f "tunnel reaches Cloudflare at its Bangkok site" \
+    || fail R-vpn-server-12.f "tunnel reaches Cloudflare at site '${exit_site:-unknown}', expected BKK"
+
 # R-vpn-server-12.c: WARP is the only way out. With no outbound that sends from the
 # server's own address, a request fails when WARP is unreachable instead of leaking.
 check R-vpn-server-12.c "no outbound sends from the server's own address; WARP is the default" \

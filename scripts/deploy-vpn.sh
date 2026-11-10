@@ -50,9 +50,12 @@ readonly INSTALL_LOG=$STATE_DIR/install.log
 # Cloudflare WARP (ADR-0008). The registration is made once and kept in
 # WARP_FILE. The endpoint is an address literal, so reaching WARP needs no
 # name lookup; 1280 is the packet size Cloudflare's own client uses.
+# The endpoint is the address that Cloudflare's Bangkok site answers from this
+# host, 1.4 ms away. The default one, 162.159.192.1, is answered in Singapore,
+# 27 ms away (ADR-0009).
 readonly WARP_FILE=$STATE_DIR/warp.json
 readonly WARP_API=https://api.cloudflareclient.com/v0a2158
-readonly WARP_ENDPOINT=162.159.192.1:2408
+readonly WARP_ENDPOINT=188.114.97.1:2408
 readonly WARP_MTU=1280
 readonly SYSCTL_CONF=/etc/sysctl.d/60-vpn-disable-ipv6.conf
 readonly GRUB_CONF=/etc/default/grub.d/60-vpn-disable-ipv6.cfg
