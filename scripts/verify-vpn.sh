@@ -170,6 +170,17 @@ else
     fail R-vpn-server-07.a "unattended upgrades are not enabled"
 fi
 
+# R-vpn-server-08.c (boot half): IPv6 stays off across restarts. The host must have
+# booted with IPv6 disabled in the kernel; a runtime switch alone is undone at boot.
+check R-vpn-server-08.c "kernel booted with IPv6 disabled" \
+    grep -qw 'ipv6.disable=1' /proc/cmdline
+
+# R-vpn-server-08.d: the network finishes configuring, so a boot is not held up.
+state=$(networkctl list --no-legend 2>/dev/null | awk '$3 == "ether" {print $5}' | sort -u | tr '\n' ' ')
+[ "$state" = "configured " ] \
+    && pass R-vpn-server-08.d "network interfaces are fully configured" \
+    || fail R-vpn-server-08.d "network interface setup state is: ${state:-unknown}"
+
 # R-vpn-server-08.b: services come back after a reboot.
 check R-vpn-server-08.b "panel service is enabled at boot and running" \
     sh -c 'systemctl is-enabled --quiet x-ui && systemctl is-active --quiet x-ui'

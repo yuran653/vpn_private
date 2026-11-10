@@ -4,7 +4,7 @@
 # Installs the 3x-ui panel (pinned release), binds it to loopback, and configures
 # Xray through the panel API:
 #   1. unattended security upgrades on
-#   2. IPv6 disabled on the host
+#   2. IPv6 disabled on the host (kernel parameter; needs one reboot after the first run)
 #   3. 3x-ui installed from the pinned release, panel on 127.0.0.1 only,
 #      subscription service off
 #   4. Xray template: encrypted DNS, IPv4-only egress, port-53 capture, no access log
@@ -42,6 +42,8 @@ readonly STATE_DIR=/root/vpn
 readonly LINK_FILE=$STATE_DIR/vless-link.txt
 readonly INSTALL_LOG=$STATE_DIR/install.log
 readonly SYSCTL_CONF=/etc/sysctl.d/60-vpn-disable-ipv6.conf
+readonly GRUB_CONF=/etc/default/grub.d/60-vpn-disable-ipv6.cfg
+readonly NETPLAN_BACKUP=$STATE_DIR/netplan-backup
 readonly AUTO_UPGRADES=/etc/apt/apt.conf.d/20auto-upgrades
 
 log() { printf '[deploy] %s\n' "$*"; }
@@ -71,13 +73,93 @@ chmod 644 "$AUTO_UPGRADES"
 systemctl enable --now unattended-upgrades >/dev/null 2>&1
 log "unattended upgrades enabled"
 
-# 2. IPv6 off, now and after reboot.
+# 2. IPv6 off.
+#    At boot: the kernel parameter ipv6.disable=1. A sysctl alone does not hold,
+#    because systemd-networkd turns IPv6 back on for an interface whose network
+#    config carries an IPv6 route (ADR-0004).
+#    Until the next reboot: the per-interface switches, and ufw's IPv6 side
+#    closed (with IPV6=no ufw drops all IPv6 except loopback).
+cat > "$GRUB_CONF" <<'EOF'
+GRUB_CMDLINE_LINUX="$GRUB_CMDLINE_LINUX ipv6.disable=1"
+EOF
+chmod 644 "$GRUB_CONF"
+if ! grep -q 'ipv6\.disable=1' /boot/grub/grub.cfg; then
+    update-grub >/dev/null 2>&1 || die "update-grub failed"
+    grep -q 'ipv6\.disable=1' /boot/grub/grub.cfg || die "ipv6.disable=1 did not reach grub.cfg"
+fi
+# The leading "-" makes sysctl skip these keys once the kernel has no IPv6 at all.
 cat > "$SYSCTL_CONF" <<'EOF'
-net.ipv6.conf.all.disable_ipv6 = 1
-net.ipv6.conf.default.disable_ipv6 = 1
+-net.ipv6.conf.all.disable_ipv6 = 1
+-net.ipv6.conf.default.disable_ipv6 = 1
 EOF
 chmod 644 "$SYSCTL_CONF"
-sysctl -q -p "$SYSCTL_CONF"
+for f in /proc/sys/net/ipv6/conf/*/disable_ipv6; do
+    [ -e "$f" ] && echo 1 > "$f"
+done
+if ! grep -q '^IPV6=no' /etc/default/ufw; then
+    sed -i 's/^IPV6=.*/IPV6=no/' /etc/default/ufw
+    grep -q '^IPV6=no' /etc/default/ufw || echo 'IPV6=no' >> /etc/default/ufw
+    ufw reload >/dev/null
+fi
+# The network config must not ask for IPv6 either. With IPv6 off in the kernel,
+# an IPv6 route in netplan can never be applied: systemd-networkd stays in
+# "configuring" and every boot waits two minutes for the network to come online.
+# The original files are kept in $NETPLAN_BACKUP. A config that does not
+# validate is rolled back before anything is applied.
+install -d -m 700 "$NETPLAN_BACKUP"
+netplan_changed=$(python3 - "$NETPLAN_BACKUP" <<'PY'
+import glob, os, shutil, sys, yaml
+
+backup_dir = sys.argv[1]
+is_v6 = lambda value: ":" in str(value)
+changed = []
+for path in sorted(glob.glob("/etc/netplan/*.yaml")):
+    doc = yaml.safe_load(open(path)) or {}
+    touched = False
+    for cfg in ((doc.get("network") or {}).get("ethernets") or {}).values():
+        if not isinstance(cfg, dict):
+            continue
+        for key, fields in (("routes", ("to", "via")), ("addresses", ())):
+            items = cfg.get(key)
+            if not items:
+                continue
+            keep = [i for i in items
+                    if not (any(is_v6(i.get(f, "")) for f in fields) if isinstance(i, dict) else is_v6(i))]
+            if len(keep) != len(items):
+                touched = True
+                if keep:
+                    cfg[key] = keep
+                else:
+                    del cfg[key]
+        if cfg.get("accept-ra") is not False:
+            cfg["accept-ra"] = False
+            touched = True
+        if cfg.get("link-local") != []:
+            cfg["link-local"] = []
+            touched = True
+    if touched:
+        backup = os.path.join(backup_dir, os.path.basename(path))
+        if not os.path.exists(backup):
+            shutil.copy2(path, backup)
+        tmp = path + ".tmp"
+        with open(os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w") as f:
+            yaml.safe_dump(doc, f, default_flow_style=False, sort_keys=False)
+        os.replace(tmp, path)
+        changed.append(os.path.basename(path))
+print(" ".join(changed))
+PY
+)
+if [ -n "$netplan_changed" ]; then
+    if ! netplan generate 2>"$work/netplan.err"; then
+        for f in $netplan_changed; do cp -p "$NETPLAN_BACKUP/$f" "/etc/netplan/$f"; done
+        netplan generate
+        die "edited netplan did not validate; originals restored: $(cat "$work/netplan.err")"
+    fi
+    netplan apply
+    log "IPv6 entries removed from netplan: $netplan_changed"
+fi
+reboot_needed=""
+grep -qw 'ipv6.disable=1' /proc/cmdline || reboot_needed=yes
 log "IPv6 disabled"
 
 # 3. 3x-ui, pinned. The installer prints the panel credentials, so its output
@@ -236,4 +318,7 @@ log "client link written to $LINK_FILE"
 log "final state:"
 systemctl is-active x-ui
 ufw status | sed -n '1,12p'
+if [ -n "$reboot_needed" ]; then
+    log "REBOOT NEEDED: IPv6 is off now, but stays off across restarts only after one reboot"
+fi
 log "done"
