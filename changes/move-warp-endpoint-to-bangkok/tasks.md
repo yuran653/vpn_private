@@ -5,7 +5,7 @@ Ordered. Each task touches one to three files and has its own check. Tick a task
 - [ ] 1. Measure the baseline from the owner's Mac through the VPN: connection setup to ten sites, downloads from five servers, one upload (files: none)
   Check: the measurement prints `colo=SIN loc=TH warp=on` and a number for each site.
 - [ ] 2. Point `WARP_ENDPOINT` at `188.114.97.1:2408` and update its comment (files: `scripts/deploy-vpn.sh`)
-  Check: `bash -n scripts/deploy-vpn.sh`; `grep -c 162.159.192.1 scripts/deploy-vpn.sh` prints 0.
+  Check: `bash -n scripts/deploy-vpn.sh`; `grep -c '^readonly WARP_ENDPOINT=188.114.97.1:2408$' scripts/deploy-vpn.sh` prints 1.
 - [ ] 3. Add the check that Cloudflare's connection report names the Bangkok site (files: `scripts/verify-vpn.sh`; criteria: R-vpn-server-12.f)
   Check: run on the VPS before the switch, the check fails and names `SIN`.
 - [ ] 4. Re-run `deploy-vpn.sh` on the VPS, detached, then both verify scripts (files: none; criteria: R-vpn-server-12.a to 12.f)
