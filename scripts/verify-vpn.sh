@@ -54,16 +54,35 @@ print(json.dumps({
 PY
 server_ip=$(python3 -c 'import sys,urllib.parse; print(urllib.parse.urlsplit(open(sys.argv[1]).read().strip()).hostname)' "$LINK_FILE")
 
-# One DNS query over TCP through the SOCKS proxy; prints the number of answers.
+# One DNS query through the SOCKS proxy, over TCP (default) or UDP; prints the
+# number of answers. Prints nothing and fails when no reply comes.
 cat > "$work/dnsprobe.py" <<'PY'
 import socket, struct, sys
 port, resolver, name, qtype = int(sys.argv[1]), sys.argv[2], sys.argv[3], int(sys.argv[4])
-s = socket.create_connection(("127.0.0.1", port), timeout=10)
-s.sendall(b"\x05\x01\x00"); assert s.recv(2) == b"\x05\x00"
-s.sendall(b"\x05\x01\x00\x01" + socket.inet_aton(resolver) + struct.pack(">H", 53))
-assert s.recv(10)[1] == 0
+transport = sys.argv[5] if len(sys.argv) > 5 else "tcp"
 q = struct.pack(">HHHHHH", 0x1234, 0x0100, 1, 0, 0, 0)
 q += b"".join(bytes([len(p)]) + p.encode() for p in name.split(".")) + b"\x00" + struct.pack(">HH", qtype, 1)
+s = socket.create_connection(("127.0.0.1", port), timeout=10)
+s.sendall(b"\x05\x01\x00"); assert s.recv(2) == b"\x05\x00"
+if transport == "udp":
+    # UDP ASSOCIATE; the datagram carries a SOCKS header naming the resolver.
+    s.sendall(b"\x05\x03\x00\x01\x00\x00\x00\x00\x00\x00")
+    reply = s.recv(10)
+    assert reply[1] == 0
+    relay = ("127.0.0.1", struct.unpack(">H", reply[8:10])[0])
+    u = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    u.settimeout(10)
+    u.sendto(b"\x00\x00\x00\x01" + socket.inet_aton(resolver) + struct.pack(">H", 53) + q, relay)
+    try:
+        data = u.recvfrom(4096)[0][10:]     # drop the 10-byte SOCKS header
+    except socket.timeout:
+        sys.exit(1)
+    if len(data) < 12:
+        sys.exit(1)
+    print(struct.unpack(">H", data[6:8])[0])
+    sys.exit(0)
+s.sendall(b"\x05\x01\x00\x01" + socket.inet_aton(resolver) + struct.pack(">H", 53))
+assert s.recv(10)[1] == 0
 s.sendall(struct.pack(">H", len(q)) + q)
 data = b""
 while len(data) < 12:
@@ -130,10 +149,15 @@ aaaa=$(python3 "$work/dnsprobe.py" "$SOCKS_PORT" 1.1.1.1 google.com 28 2>/dev/nu
 
 # R-vpn-server-03.a: a DNS query sent through the tunnel is answered by the server itself,
 # even when addressed to a resolver that does not exist (192.0.2.53 is a reserved test address).
-a=$(python3 "$work/dnsprobe.py" "$SOCKS_PORT" 192.0.2.53 example.com 1 2>/dev/null)
-[ -n "$a" ] && [ "$a" -ge 1 ] 2>/dev/null \
-    && pass R-vpn-server-03.a "DNS query to a non-existent resolver was answered by the server" \
-    || fail R-vpn-server-03.a "DNS query through the tunnel was not answered by the server"
+# Checked over TCP and over UDP, the transport client devices use by default.
+unanswered=""
+for transport in tcp udp; do
+    a=$(python3 "$work/dnsprobe.py" "$SOCKS_PORT" 192.0.2.53 example.com 1 "$transport" 2>/dev/null)
+    [ -n "$a" ] && [ "$a" -ge 1 ] 2>/dev/null || unanswered="$unanswered $transport"
+done
+[ -z "$unanswered" ] \
+    && pass R-vpn-server-03.a "DNS query to a non-existent resolver was answered by the server, over TCP and UDP" \
+    || fail R-vpn-server-03.a "DNS query through the tunnel was not answered by the server over:$unanswered"
 
 # R-vpn-server-03.b: every resolver the server uses for tunnel traffic is DNS-over-HTTPS.
 check R-vpn-server-03.b "all tunnel DNS resolvers are DNS-over-HTTPS" \
