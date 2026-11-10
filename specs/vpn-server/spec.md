@@ -50,7 +50,7 @@ A party without the client key cannot tell the VPN port from an ordinary HTTPS s
 
 ### R-vpn-server-05: Panel not discoverable
 
-The management panel cannot be found or reached from the internet, and its subscription service is reachable only through the tunnel.
+The management panel and its subscription service cannot be found or reached from the internet.
 
 - **R-vpn-server-05.a** [verified] WHEN the host's listening sockets are listed THEN only SSH and port 443 listen on a public address, apart from the UDP socket the proxy holds open to send its WARP tunnel traffic.
   Test: `scripts/verify-vpn.sh` (R-vpn-server-05.a)
@@ -119,13 +119,13 @@ The server sends tunnel traffic with a congestion control that keeps its rate wh
 
 ### R-vpn-server-12: Client traffic leaves through Cloudflare WARP
 
-Everything a client sends through the tunnel leaves the server through Cloudflare WARP, enters Cloudflare at its Bangkok site, exits in Thailand, and never leaves from the server's own address. The one exception is the client's request for its subscription, which the server answers itself.
+Everything a client sends through the tunnel leaves the server through Cloudflare WARP, enters Cloudflare at its Bangkok site, exits in Thailand, and never leaves from the server's own address.
 
 - **R-vpn-server-12.a** [verified] WHEN a client requests Cloudflare's connection report through the tunnel THEN the report says the request came through WARP.
   Test: `scripts/verify-vpn.sh` (R-vpn-server-12.a)
 - **R-vpn-server-12.b** [verified] WHEN a client requests Cloudflare's connection report through the tunnel THEN the report places the client in Thailand.
   Test: `scripts/verify-vpn.sh` (R-vpn-server-12.b)
-- **R-vpn-server-12.c** [verified] WHEN the running proxy configuration is inspected THEN WARP is its default outbound, and no outbound can send traffic anywhere but the server's own loopback address, so a request fails when WARP is unreachable.
+- **R-vpn-server-12.c** [verified] WHEN the running proxy configuration is inspected THEN it has no outbound that sends traffic from the server's own address, so a request fails when WARP is unreachable.
   Test: `scripts/verify-vpn.sh` (R-vpn-server-12.c)
 - **R-vpn-server-12.d** [verified] WHEN a client opens YouTube Music through the tunnel THEN the page is not the "not available in your area" page.
   Test: `scripts/verify-vpn.sh` (R-vpn-server-12.d)
@@ -133,20 +133,3 @@ Everything a client sends through the tunnel leaves the server through Cloudflar
   Test: none
 - **R-vpn-server-12.f** [verified] WHEN a client requests Cloudflare's connection report through the tunnel THEN the report names Cloudflare's Bangkok site as the place the request reached Cloudflare.
   Test: `scripts/verify-vpn.sh` (R-vpn-server-12.f)
-
-### R-vpn-server-13: Subscription through the tunnel
-
-The client app can import the server as a named subscription that carries the client link and the traffic used, and only a connected client can fetch it.
-
-- **R-vpn-server-13.a** [verified] WHEN a client requests the subscription address through the tunnel THEN it receives a client link for the server's own address on the VPN port.
-  Test: `scripts/verify-vpn.sh` (R-vpn-server-13.a)
-- **R-vpn-server-13.b** [verified] WHEN a client requests the subscription address through the tunnel THEN the response names the group `VPN ไทย`.
-  Test: `scripts/verify-vpn.sh` (R-vpn-server-13.b)
-- **R-vpn-server-13.c** [verified] WHEN a client requests the subscription address through the tunnel THEN the traffic information in the response has no quota and no expiry date.
-  Test: `scripts/verify-vpn.sh` (R-vpn-server-13.c)
-- **R-vpn-server-13.d** [verified] WHEN a host on the internet requests the subscription address on the server's public address, on the subscription service's port THEN the connection is not accepted.
-  Test: `scripts/verify-vpn.sh` (R-vpn-server-13.d), `scripts/verify-external.sh` (R-vpn-server-05.b)
-- **R-vpn-server-13.e** [verified] WHEN a client requests the subscription address through the tunnel THEN the profile in the link is named `กรุงเทพฯ cloud.z.com`.
-  Test: `scripts/verify-vpn.sh` (R-vpn-server-13.e)
-- **R-vpn-server-13.f** [verified] WHEN a client requests any other reserved or private address through the tunnel THEN the request fails.
-  Test: `scripts/verify-vpn.sh` (R-vpn-server-13.f)

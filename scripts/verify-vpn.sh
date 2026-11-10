@@ -185,13 +185,11 @@ exit_site=$(printf '%s\n' "$trace" | sed -n 's/^colo=//p')
     && pass R-vpn-server-12.f "tunnel reaches Cloudflare at its Bangkok site" \
     || fail R-vpn-server-12.f "tunnel reaches Cloudflare at site '${exit_site:-unknown}', expected BKK"
 
-# R-vpn-server-12.c: WARP is the only way out. No outbound can send from the server's
-# own address, so a request fails when WARP is unreachable instead of leaking. The
-# one other outbound, the subscription's (ADR-0010), redirects to loopback only.
-check R-vpn-server-12.c "WARP is the default outbound; no outbound reaches anything but loopback" \
+# R-vpn-server-12.c: WARP is the only way out. With no outbound that sends from the
+# server's own address, a request fails when WARP is unreachable instead of leaking.
+check R-vpn-server-12.c "no outbound sends from the server's own address; WARP is the default" \
     jq -e '.outbounds[0].protocol == "wireguard" and .outbounds[0].tag == "warp"
-        and ([.outbounds[] | select(.protocol == "freedom")
-              | select(((.settings.redirect // "") | test("^127\\.0\\.0\\.1:[0-9]+$")) | not)] | length) == 0' "$XRAY_CONFIG"
+        and ([.outbounds[] | select(.protocol == "freedom")] | length) == 0' "$XRAY_CONFIG"
 
 # R-vpn-server-12.d: YouTube Music opens through the tunnel. From an address that
 # Google places in an unsupported country it answers with a "not available" page.
@@ -204,60 +202,6 @@ elif printf '%s' "$ytm" | grep -qi 'not available in your'; then
 else
     pass R-vpn-server-12.d "YouTube Music is available at the tunnel exit"
 fi
-
-# R-vpn-server-13: the subscription, requested the way the client app does it, through
-# the tunnel at the reserved address (ADR-0010).
-readonly SUB_URL_FILE=/root/vpn/subscription-url.txt
-readonly SUB_ADDRESS=192.0.2.1
-readonly SUB_NAME_GROUP='VPN ไทย'
-readonly SUB_NAME_PROFILE='กรุงเทพฯ cloud.z.com'
-sub_path=""
-[ -r "$SUB_URL_FILE" ] && sub_path=$(sed -E 's#^http://[^/]+##' "$SUB_URL_FILE")
-via -D "$work/sub.headers" -o "$work/sub.body" "http://$SUB_ADDRESS$sub_path" >/dev/null 2>&1
-python3 -I - "$work/sub.headers" "$work/sub.body" "$server_ip" "$VPN_PORT" "$SUB_NAME_GROUP" "$SUB_NAME_PROFILE" > "$work/sub.result" 2>&1 <<'PY'
-import base64, binascii, sys, urllib.parse
-headers_file, body_file, ip, port, group, profile = sys.argv[1:7]
-headers = {}
-for line in open(headers_file, encoding="utf-8", errors="replace"):
-    if ":" in line:
-        k, v = line.split(":", 1)
-        headers[k.strip().lower()] = v.strip()
-body = open(body_file, "rb").read().strip()
-try:
-    text = base64.b64decode(body + b"=" * (-len(body) % 4)).decode()
-except (binascii.Error, UnicodeDecodeError):
-    text = body.decode(errors="replace")
-links = [l for l in text.split() if l.startswith("vless://")]
-print("a", "ok" if any(("@%s:%s?" % (ip, port)) in l for l in links) else "no vless link for %s:%s" % (ip, port))
-title = headers.get("profile-title", "")
-if title.startswith("base64:"):
-    title = base64.b64decode(title[7:] + "=" * (-len(title[7:]) % 4)).decode()
-print("b", "ok" if title == group else "title is '%s'" % title)
-info = dict(p.strip().split("=", 1) for p in headers.get("subscription-userinfo", "").split(";") if "=" in p)
-print("c", "ok" if info.get("total") == "0" and info.get("expire", "0") == "0" else "userinfo is '%s'" % headers.get("subscription-userinfo", "none"))
-names = [urllib.parse.unquote(l.split("#", 1)[1]) for l in links if "#" in l]
-print("e", "ok" if names == [profile] else "profile names are %s" % names)
-PY
-sub_check() { # sub_check <letter> <criterion> <description>
-    local line; line=$(grep "^$1 " "$work/sub.result" | head -n1)
-    if [ "${line#"$1 "}" = ok ]; then pass "$2" "$3"; else fail "$2" "$3 (${line#"$1 "}${line:-no result})"; fi
-}
-sub_check a R-vpn-server-13.a "the subscription carries the client link for the server's address"
-sub_check b R-vpn-server-13.b "the subscription is titled '$SUB_NAME_GROUP'"
-sub_check c R-vpn-server-13.c "the traffic information has no quota and no expiry"
-sub_check e R-vpn-server-13.e "the profile is named '$SUB_NAME_PROFILE'"
-if curl -s -o /dev/null --max-time 5 "http://$server_ip:2096/"; then
-    fail R-vpn-server-13.d "the subscription port answers on the public address"
-else
-    pass R-vpn-server-13.d "the subscription port does not answer on the public address"
-fi
-reached=""
-for target in http://192.0.2.2/ http://192.0.2.1:8080/ http://127.0.0.1:2096/ http://10.0.0.1/ http://169.254.169.254/; do
-    via -o /dev/null "$target" && reached="$reached $target"
-done
-[ -z "$reached" ] \
-    && pass R-vpn-server-13.f "other reserved and private addresses are refused through the tunnel" \
-    || fail R-vpn-server-13.f "reachable through the tunnel:$reached"
 
 # R-vpn-server-04.a (inside half): a TLS client without the key gets the cover site's certificate.
 subject=$(echo | timeout 15 openssl s_client -connect "127.0.0.1:$VPN_PORT" \
