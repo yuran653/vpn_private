@@ -98,6 +98,8 @@ Secrets stay on the VPS, readable by root only:
 
 To show the client link: `ssh zcom-th 'sudo -n cat /root/vpn/vless-link.txt'`. Do not paste it into the repo (rule 2).
 
+The link names the profile `กรุงเทพฯ cloud.z.com` (ADR-0011). Happ shows a new name only after the link is imported again; the group ("Server-List") and the main icon are the app's own, and there is no subscription or traffic counter in the app (ADR-0010 was tried and dropped). The panel's own counter shows the client's traffic.
+
 The panel listens on 127.0.0.1 only (ADR-0002). To open it, read the port and path from `install-result.env`, then tunnel:
 
 ```bash

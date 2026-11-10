@@ -203,6 +203,11 @@ else
     pass R-vpn-server-12.d "YouTube Music is available at the tunnel exit"
 fi
 
+# R-vpn-server-14.a: the client link names the profile.
+check R-vpn-server-14.a "the client link is named 'กรุงเทพฯ cloud.z.com'" \
+    python3 -I -c 'import sys, urllib.parse; sys.exit(0 if urllib.parse.unquote(urllib.parse.urlsplit(open(sys.argv[1]).read().strip()).fragment) == sys.argv[2] else 1)' \
+    "$LINK_FILE" 'กรุงเทพฯ cloud.z.com'
+
 # R-vpn-server-04.a (inside half): a TLS client without the key gets the cover site's certificate.
 subject=$(echo | timeout 15 openssl s_client -connect "127.0.0.1:$VPN_PORT" \
     -servername "$(jq -r '.inbounds[] | select(.port == 443) | .streamSettings.realitySettings.serverNames[0]' "$XRAY_CONFIG")" \

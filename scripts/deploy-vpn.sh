@@ -41,7 +41,8 @@ readonly XUI_RESULT=/etc/x-ui/install-result.env
 
 readonly VPN_PORT=443
 readonly REALITY_TARGET=www.samsung.com
-readonly INBOUND_REMARK=th-reality
+# The inbound's name is the profile name the client app shows (ADR-0011).
+readonly INBOUND_REMARK='กรุงเทพฯ cloud.z.com'
 readonly CLIENT_EMAIL=owner
 
 readonly STATE_DIR=/root/vpn
@@ -427,6 +428,16 @@ if [ -z "$id" ]; then
 else
     log "inbound on ${VPN_PORT}/tcp already exists; keys kept"
 fi
+# The inbound's name is the profile name in the client app. An external proxy
+# list left by the removed subscription (ADR-0010) is emptied. Nothing else changes.
+api_ok "read inbound" "panel/api/inbounds/get/$id" | jq '.obj | del(.clientStats)' > "$work/inbound-now.json"
+jq --arg remark "$INBOUND_REMARK" '.remark = $remark | .streamSettings.externalProxy = []' \
+    "$work/inbound-now.json" > "$work/inbound-want.json"
+if [ "$(jq -S . "$work/inbound-now.json")" != "$(jq -S . "$work/inbound-want.json")" ]; then
+    api_ok "update inbound" "panel/api/inbounds/update/$id" -X POST \
+        -H 'Content-Type: application/json' -d @"$work/inbound-want.json" >/dev/null
+    log "inbound named as its profile"
+fi
 
 # 7. Firewall, then restart Xray so the template and inbound are live.
 ufw allow "${VPN_PORT}/tcp" comment 'VLESS Reality' >/dev/null
@@ -480,15 +491,16 @@ log "xray listening on ${VPN_PORT}/tcp"
 # 8. Client link, built from what the panel stores. Written to a root-only file.
 public_ip=$(ip -4 route get 1.1.1.1 | awk '{for (i = 1; i < NF; i++) if ($i == "src") print $(i + 1)}')
 printf '%s' "$public_ip" | grep -Eq '^([0-9]{1,3}\.){3}[0-9]{1,3}$' || die "could not read the public IPv4 address"
-api_ok "read inbound" "panel/api/inbounds/get/$id" | jq -r --arg ip "$public_ip" --arg email "$CLIENT_EMAIL" '
+api_ok "read inbound" "panel/api/inbounds/get/$id" | jq -r --arg ip "$public_ip" --arg email "$CLIENT_EMAIL" --arg name "$INBOUND_REMARK" '
     .obj as $in
     | ($in.settings.clients[] | select(.email == $email)) as $c
     | $in.streamSettings.realitySettings as $r
-    | "vless://\($c.id)@\($ip):\($in.port)?encryption=none&flow=\($c.flow)&type=tcp&headerType=none&security=reality&sni=\($r.serverNames[0])&fp=\($r.settings.fingerprint)&pbk=\($r.settings.publicKey)&sid=\($r.shortIds[0])&spx=%2F#TH-Reality"' \
+    | "vless://\($c.id)@\($ip):\($in.port)?encryption=none&flow=\($c.flow)&type=tcp&headerType=none&security=reality&sni=\($r.serverNames[0])&fp=\($r.settings.fingerprint)&pbk=\($r.settings.publicKey)&sid=\($r.shortIds[0])&spx=%2F#\($name | @uri)"' \
     > "$LINK_FILE"
 chmod 600 "$LINK_FILE"
 grep -q '^vless://' "$LINK_FILE" || die "client link was not written"
 log "client link written to $LINK_FILE"
+rm -f "$STATE_DIR/subscription-url.txt"
 
 log "final state:"
 systemctl is-active x-ui
