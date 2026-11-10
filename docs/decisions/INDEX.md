@@ -11,7 +11,8 @@ Format: `- Do not <approach>: <one-line reason>. (ADR-NNNN)`
 - Do not open a firewall port for the 3x-ui panel or its subscription service, or bind either to a public address: a reachable panel can be discovered and attacked. (ADR-0002)
 - Do not rely on sysctl `disable_ipv6` alone to turn IPv6 off: systemd-networkd re-enables it at boot on an interface with IPv6 config. Use the `ipv6.disable=1` kernel parameter. (ADR-0004)
 - Do not use `ufw limit` on the SSH port: its fixed 6 connections in 30 seconds locks out the operator's own scp and ssh script runs. Use the per-address limits in `before.rules`. (ADR-0005)
-- Do not add a `freedom` outbound to the Xray template that can reach anything but the subscription service on loopback, or route client traffic out from the server's own address: Google places that address in Myanmar, and a second way out leaks when WARP is down. (ADR-0008, ADR-0010)
+- Do not add a `freedom` outbound to the Xray template or route client traffic out from the server's own address: Google places that address in Myanmar, and a second way out leaks when WARP is down. (ADR-0008)
+- Do not serve a subscription to the client app through the tunnel at a reserved address, or otherwise expect Happ to fetch one through its own tunnel: the app fetches subscriptions outside it and the request times out. A subscription needs a public address, which ADR-0002 forbids. (ADR-0011)
 - Do not point the WARP tunnel at `162.159.192.1` (`engage.cloudflareclient.com`) or at `162.159.193.1`: from this host the first is answered in Singapore, 27 ms away, and the second passes no traffic. (ADR-0009)
 
 ## Log
@@ -29,4 +30,5 @@ One row per decision record in this folder. Files are named `ADR-NNNN-<slug>.md`
 | [ADR-0007](ADR-0007-bbr-congestion-control.md) | BBR congestion control with fq pacing | accepted | 2026-11-10 |
 | [ADR-0008](ADR-0008-egress-through-warp.md) | Client traffic leaves through Cloudflare WARP | accepted | 2026-11-10 |
 | [ADR-0009](ADR-0009-warp-endpoint-in-bangkok.md) | WARP endpoint answered in Bangkok | accepted | 2026-11-10 |
-| [ADR-0010](ADR-0010-subscription-through-tunnel.md) | Subscription served through the tunnel | accepted | 2026-11-11 |
+| [ADR-0010](ADR-0010-subscription-through-tunnel.md) | Subscription served through the tunnel | superseded by ADR-0011 | 2026-11-11 |
+| [ADR-0011](ADR-0011-no-subscription-name-in-the-link.md) | No subscription; the profile name travels in the client link | accepted | 2026-11-11 |

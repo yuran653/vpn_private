@@ -1,6 +1,6 @@
 # ADR-0002: Panel on loopback, installed from a pinned release
 
-- Status: accepted; the subscription-service line is superseded by ADR-0010 (on, loopback only, reached through the tunnel)
+- Status: accepted
 - Date: 2026-11-10
 - Supersedes: none
 - Change: `changes/archive/2026-11-10-deploy-vless-reality/`

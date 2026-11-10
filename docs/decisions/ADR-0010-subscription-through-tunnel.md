@@ -1,6 +1,6 @@
 # ADR-0010: Subscription served through the tunnel
 
-- Status: accepted
+- Status: superseded by ADR-0011 on 2026-11-11, the day it was made: Happ does not fetch a subscription through its own tunnel
 - Date: 2026-11-11
 - Supersedes: the "subscription service is off" part of ADR-0002, and the "no `freedom` outbound" part of ADR-0008 (both narrowed, not reversed)
 - Change: `changes/archive/2026-11-11-add-subscription-through-tunnel/`

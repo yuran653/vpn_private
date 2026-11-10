@@ -82,16 +82,6 @@ Client traffic does not leave from the server's own address. The deploy script r
 - Clients keep the same link. They still connect to the server's own address on port 443.
 - The tunnel goes to `188.114.97.1`, which Cloudflare's Bangkok site answers from this host (ADR-0009). If Cloudflare routes that address to another site, R-vpn-server-12.f fails and names the site. Traffic is then slower, but the exit is still valid while R-vpn-server-12.a to 12.d pass.
 
-## Subscription for the client app
-
-The client app (Happ) shows the group `VPN ไทย`, the profile `กรุงเทพฯ cloud.z.com` and a used-traffic counter from a subscription (ADR-0010). The subscription is not on the internet: it is reachable only through the tunnel, at a reserved address that the server answers itself.
-
-- Show the address: `ssh zcom-th 'sudo -n cat /root/vpn/subscription-url.txt'`. It holds a secret path and ID; do not paste it into the repo (rule 2).
-- In the app: connect with the existing profile first, then add the subscription by that address. The app must fetch it through its own tunnel; with the VPN off the request cannot be answered. Refresh it from the app's menu or wait for the hourly update.
-- The counter is the panel's count of the client's traffic through the tunnel, both directions. It has no quota and no expiry date.
-- The app's main icon (the flag in place of the globe) is chosen by the app; no setting on the server sets it.
-- If the subscription never loads, `scripts/verify-vpn.sh` shows R-vpn-server-13 from the server's side; a pass there with a failing phone means the app fetches outside its tunnel.
-
 ## What the server does not defend against
 
 A volumetric DDoS fills the uplink before the firewall sees a packet. Only the provider can absorb it, and Reality cannot sit behind a CDN. The practical recovery is a new IP address from the provider, then a re-run of `deploy-vpn.sh` to rewrite the client link.
@@ -101,13 +91,14 @@ Secrets stay on the VPS, readable by root only:
 | What | Where |
 |---|---|
 | Client link (`vless://...`) | `/root/vpn/vless-link.txt` |
-| Subscription address | `/root/vpn/subscription-url.txt` |
 | Panel user, password, port, path and API token | `/etc/x-ui/install-result.env` |
 | Installer output | `/root/vpn/install.log` |
 | WARP registration (private key, device id, token) | `/root/vpn/warp.json` |
 | Original netplan files | `/root/vpn/netplan-backup/` |
 
 To show the client link: `ssh zcom-th 'sudo -n cat /root/vpn/vless-link.txt'`. Do not paste it into the repo (rule 2).
+
+The link names the profile `กรุงเทพฯ cloud.z.com` (ADR-0011). Happ shows a new name only after the link is imported again; the group ("Server-List") and the main icon are the app's own, and there is no subscription or traffic counter in the app (ADR-0010 was tried and dropped). The panel's own counter shows the client's traffic.
 
 The panel listens on 127.0.0.1 only (ADR-0002). To open it, read the port and path from `install-result.env`, then tunnel:
 
