@@ -43,13 +43,12 @@ DNS queries arriving through the tunnel are answered by the server, and the serv
 
 A party without the client ID who reaches the server's names gets the website, and the tunnel is reachable only through the web server on one path.
 
-- **R-vpn-server-04.a** [verified] WHEN a TLS client without the client ID connects to port 443 with the name `status.casedigestai.com` THEN it receives a publicly trusted certificate for that name and the landing page.
+- **R-vpn-server-04.a** [verified] WHEN a TLS client without the client ID connects to port 443 with the name `files.casedigestai.com` THEN it receives a publicly trusted certificate for that name and the landing page.
   Test: `scripts/verify-external.sh` (R-vpn-server-04.a), `scripts/verify-vpn.sh` (R-vpn-server-04.a)
-- **R-vpn-server-04.b** [verified] WHEN a TLS client without the client ID connects to port 443 with the name `casedigestai.com`, or with no name, THEN it receives the same site's certificate, not a connection reset.
+- **R-vpn-server-04.b** [verified] WHEN a TLS client without the client ID connects to port 443 with the name `casedigestai.com` or `status.casedigestai.com`, or with no name, THEN it receives the same site's certificate, not a connection reset.
   Test: `scripts/verify-external.sh` (R-vpn-server-04.b), `scripts/verify-vpn.sh` (R-vpn-server-04.b)
 - **R-vpn-server-04.c** [verified] WHEN the running configuration is inspected THEN the tunnel inbound listens on loopback only, and port 443 is held by the web server.
   Test: `scripts/verify-vpn.sh` (R-vpn-server-04.c)
-
 ### R-vpn-server-05: Panel not discoverable
 
 The management panel, its subscription service, the tunnel inbound and the site's content server cannot be found or reached from the internet.
@@ -133,30 +132,30 @@ Everything a client sends through the tunnel leaves the server through Cloudflar
 
 ### R-vpn-server-14: Client link names the server
 
-The client link names the profile `กรุงเทพฯ cloud.z.com` and carries the tunnel over HTTPS to `status.casedigestai.com`.
+The client link names the profile `กรุงเทพฯ cloud.z.com` and carries the tunnel over HTTPS to `files.casedigestai.com`.
 
 - **R-vpn-server-14.a** [verified] WHEN the client link is read THEN the name after `#` is `กรุงเทพฯ cloud.z.com`.
   Test: `scripts/verify-vpn.sh` (R-vpn-server-14.a)
-- **R-vpn-server-14.b** [untested: no automated test; on 2026-11-12 the deploy script was re-run after the cut-over and the link's checksum compared, and the client ID was compared with the removed Reality inbound's] WHEN the deploy script runs on a host that already has the link THEN the client ID and the path in the link are unchanged.
+- **R-vpn-server-14.b** [untested: no automated test; on 2026-11-12 the deploy script was re-run after the move to `files.casedigestai.com` and the link's checksum compared, unchanged] WHEN the deploy script runs on a host that already has the link THEN the client ID and the path in the link are unchanged.
   Test: none
-- **R-vpn-server-14.c** [verified] WHEN the client link is read THEN its transport is XHTTP over TLS, and its `sni` and `host` are `status.casedigestai.com`.
+- **R-vpn-server-14.c** [verified] WHEN the client link is read THEN its transport is XHTTP over TLS, and its `sni` and `host` are `files.casedigestai.com`.
   Test: `scripts/verify-vpn.sh` (R-vpn-server-14.c)
-
 ### R-vpn-server-15: Cover site on the owner's domain
 
-The server is the website of `casedigestai.com` and `status.casedigestai.com`, published through Cloudflare: both names answer with a valid certificate and the landing page.
+The server is the website of `casedigestai.com`, `files.casedigestai.com` and `status.casedigestai.com`, published through Cloudflare: every name answers with a valid certificate and the landing page.
 
-- **R-vpn-server-15.a** [verified] WHEN `casedigestai.com` and `status.casedigestai.com` are resolved from the internet THEN neither resolves to the server's own address.
+- **R-vpn-server-15.a** [verified] WHEN `casedigestai.com`, `files.casedigestai.com` and `status.casedigestai.com` are resolved from the internet THEN none resolves to the server's own address.
   Test: `scripts/verify-external.sh` (R-vpn-server-15.a)
-- **R-vpn-server-15.b** [verified] WHEN a browser opens `https://casedigestai.com` or `https://status.casedigestai.com` THEN it receives a publicly trusted certificate that names that host and a page containing "CaseDigest AI".
+- **R-vpn-server-15.b** [verified] WHEN a browser opens `https://` on any of the three names THEN it receives a publicly trusted certificate that names that host and a page containing "CaseDigest AI".
   Test: `scripts/verify-external.sh` (R-vpn-server-15.b)
 - **R-vpn-server-15.c** [verified] WHEN the landing page and everything it loads are inspected THEN no URL points to another host, and the page has no form and no script.
   Test: `scripts/verify-external.sh` (R-vpn-server-15.c)
 - **R-vpn-server-15.d** [verified] WHEN the landing page is read THEN it mentions neither a VPN nor Thailand.
   Test: `scripts/verify-external.sh` (R-vpn-server-15.d)
-- **R-vpn-server-15.e** [verified] WHEN a client requests `http://` on port 80 for either name THEN it is redirected to the same path on `https://` of that name.
+- **R-vpn-server-15.e** [verified] WHEN a client requests `http://` on port 80 for any of the three names THEN it is redirected to the same path on `https://` of that name.
   Test: `scripts/verify-external.sh` (R-vpn-server-15.e)
-
+- **R-vpn-server-15.f** [verified] WHEN the landing page is read THEN it describes case-file upload and sync at `files.casedigestai.com`.
+  Test: `scripts/verify-external.sh` (R-vpn-server-15.f)
 ### R-vpn-server-16: Certificate renews unattended
 
 The site certificate is renewed without an operator.
@@ -172,7 +171,18 @@ The site certificate is renewed without an operator.
 
 Clients reach the server only through Cloudflare, and the server's own address answers nobody else on its web ports.
 
-- **R-vpn-server-17.a** [verified] WHEN the client link is read THEN its address is `status.casedigestai.com`, not an IP address, and that name resolves from the internet only to addresses in Cloudflare's published IPv4 ranges.
+- **R-vpn-server-17.a** [verified] WHEN the client link is read THEN its address is `files.casedigestai.com`, not an IP address, and that name resolves from the internet only to addresses in Cloudflare's published IPv4 ranges.
   Test: `scripts/verify-vpn.sh` (R-vpn-server-17.a), `scripts/verify-external.sh` (R-vpn-server-17.a)
 - **R-vpn-server-17.b** [verified] WHEN a host outside Cloudflare's ranges connects to port 80 or 443 of the server's own address THEN it gets no answer.
   Test: `scripts/verify-external.sh` (R-vpn-server-17.b)
+
+### R-vpn-server-18: Connections rotate like a browser's
+
+A client using the link spreads a long stretch of use over many short connections to Cloudflare, and the tunnel's requests and responses carry random padding.
+
+- **R-vpn-server-18.a** [verified] WHEN the client link is read THEN its XHTTP settings stop a connection taking new sessions after at most 300 seconds and after at most 64 sessions, and pad every request with 100 to 1000 bytes.
+  Test: `scripts/verify-vpn.sh` (R-vpn-server-18.a)
+- **R-vpn-server-18.b** [untested: a check needs more than 5 minutes. Run by hand on 2026-11-12 (one slow download plus a new session every 10 s for 330 s): 2 connections with the link's settings, but also 3 with Xray's defaults, so the run does not isolate what the settings add] WHEN a client using the link opens sessions over more than 300 seconds THEN it has used more than one connection to Cloudflare.
+  Test: none
+- **R-vpn-server-18.c** [verified] WHEN the running proxy configuration is inspected THEN the tunnel inbound pads its responses with 100 to 1000 bytes.
+  Test: `scripts/verify-vpn.sh` (R-vpn-server-18.c)
