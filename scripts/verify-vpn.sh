@@ -402,7 +402,9 @@ check R-vpn-server-08.c "kernel booted with IPv6 disabled" \
     grep -qw 'ipv6.disable=1' /proc/cmdline
 
 # R-vpn-server-08.d: the network finishes configuring, so a boot is not held up.
-state=$(networkctl list --no-legend 2>/dev/null | awk '$3 == "ether" {print $5}' | sort -u | tr '\n' ' ')
+# The virtual interfaces Docker makes for its containers (veth*) are not the
+# host's own: the network service does not manage them and no boot waits for them.
+state=$(networkctl list --no-legend 2>/dev/null | awk '$3 == "ether" && $2 !~ /^veth/ {print $5}' | sort -u | tr '\n' ' ')
 [ "$state" = "configured " ] \
     && pass R-vpn-server-08.d "network interfaces are fully configured" \
     || fail R-vpn-server-08.d "network interface setup state is: ${state:-unknown}"
