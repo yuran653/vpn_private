@@ -1,0 +1,26 @@
+# The website behind casedigestai.com and status.casedigestai.com (ADR-0012).
+# deploy-vpn.sh copies this folder to /opt/cover-site and starts it.
+#
+# The port is published on 127.0.0.1 only: Docker's own firewall rules bypass
+# ufw, so a port published on every address would be open to the internet.
+# The owner's real website later replaces the `site` service; it must keep
+# answering HTTP on 127.0.0.1:8080.
+#
+# The image is pinned by digest (the `stable-alpine` tag as read from the
+# registry on 2026-11-12), so a re-run never pulls different code. It does not
+# update itself: change the digest to take a newer nginx.
+services:
+  site:
+    image: nginx:stable-alpine@sha256:583b7f2fce1cdb8da5ad5c39ebd3c33b98b87d493190e548bdee1fa8c619c311
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:80"
+    volumes:
+      - ./html:/usr/share/nginx/html:ro
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    read_only: true
+    tmpfs:
+      - /var/cache/nginx
+      - /run
+    logging:
+      driver: none

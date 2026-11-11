@@ -49,9 +49,9 @@ The change records are in `changes/archive/2026-11-10-apply-vps-baseline/` and `
 `scripts/deploy-vpn.sh` installs 3x-ui and configures the VLESS + Reality server. Run the baseline script first. It takes no arguments and prints no secret:
 
 ```bash
-scp scripts/deploy-vpn.sh scripts/verify-vpn.sh zcom-th:/tmp/
+scp -r scripts/deploy-vpn.sh scripts/verify-vpn.sh site zcom-th:/tmp/
 ssh zcom-th 'sudo -n bash /tmp/deploy-vpn.sh'
-ssh zcom-th 'sudo -n bash /tmp/verify-vpn.sh; sudo -n rm -f /tmp/deploy-vpn.sh /tmp/verify-vpn.sh'
+ssh zcom-th 'sudo -n bash /tmp/verify-vpn.sh; sudo -n rm -rf /tmp/deploy-vpn.sh /tmp/verify-vpn.sh /tmp/site'
 bash scripts/verify-external.sh
 ```
 
@@ -63,6 +63,16 @@ The deploy script also installs pending security updates, which takes several mi
 ssh zcom-th 'sudo -n sh -c "nohup bash /tmp/deploy-vpn.sh > /root/vpn/deploy-run.log 2>&1 &"'
 ssh zcom-th 'sudo -n tail /root/vpn/deploy-run.log'      # repeat until it prints "[deploy] done"
 ```
+
+## Cover site
+
+The server is the website of `casedigestai.com` and `status.casedigestai.com` (ADR-0012). A connection to port 443 without the client key gets that site.
+
+- nginx on the host answers on port 80 (certificate challenge, redirect to HTTPS) and on `127.0.0.1:8443` with the Let's Encrypt certificate. Its config, `/etc/nginx/conf.d/cover-site.conf`, is written by `deploy-vpn.sh`.
+- The pages come from a Docker container in `/opt/cover-site`, published on `127.0.0.1:8080` only. The source is the repo's `site/` folder; change the page there and re-run the deploy script.
+- The certificate renews through `certbot.timer`. `scripts/verify-vpn.sh` rehearses a renewal (R-vpn-server-16.b).
+- The inbound as it was before the last change is in `/root/vpn/inbound-previous.json`, root-only.
+- Neither nginx nor the container keeps an access log.
 
 ## Updates and reboots
 
@@ -84,7 +94,7 @@ Client traffic does not leave from the server's own address. The deploy script r
 
 ## What the server does not defend against
 
-A volumetric DDoS fills the uplink before the firewall sees a packet. Only the provider can absorb it, and Reality cannot sit behind a CDN. The practical recovery is a new IP address from the provider, then a re-run of `deploy-vpn.sh` to rewrite the client link.
+A volumetric DDoS fills the uplink before the firewall sees a packet. Only the provider can absorb it, and Reality cannot sit behind a CDN. The practical recovery is a new IP address from the provider, then the A records of `casedigestai.com` and `status.casedigestai.com` changed to it, then a re-run of `deploy-vpn.sh` to rewrite the client link. The deploy script stops before it touches the tunnel while either name still resolves elsewhere.
 
 Secrets stay on the VPS, readable by root only:
 

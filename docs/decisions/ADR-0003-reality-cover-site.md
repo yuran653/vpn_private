@@ -1,6 +1,6 @@
 # ADR-0003: Reality cover site
 
-- Status: accepted
+- Status: superseded by ADR-0012
 - Date: 2026-11-10
 - Supersedes: none
 - Change: `changes/archive/2026-11-10-deploy-vless-reality/`
