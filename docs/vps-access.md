@@ -46,7 +46,7 @@ The change records are in `changes/archive/2026-11-10-apply-vps-baseline/` and `
 
 ## VPN deployment
 
-`scripts/deploy-vpn.sh` installs 3x-ui and configures the VLESS server, reached by clients only through Cloudflare (ADR-0013). Both site names must be proxied by Cloudflare before it runs. Run the baseline script first. It takes no arguments and prints no secret:
+`scripts/deploy-vpn.sh` installs 3x-ui and configures the VLESS server, reached by clients only through Cloudflare (ADR-0013). Every site name must be proxied by Cloudflare before it runs. Run the baseline script first. It takes no arguments and prints no secret:
 
 ```bash
 scp -r scripts/deploy-vpn.sh scripts/verify-vpn.sh site zcom-th:/tmp/
@@ -66,9 +66,9 @@ ssh zcom-th 'sudo -n tail /root/vpn/deploy-run.log'      # repeat until it print
 
 ## Cover site
 
-The server is the website of `casedigestai.com` and `status.casedigestai.com` (ADR-0012), published through Cloudflare (ADR-0013).
+The server is the website of `casedigestai.com`, `files.casedigestai.com` and `status.casedigestai.com` (ADR-0012, ADR-0014), published through Cloudflare (ADR-0013). Clients connect to `files.casedigestai.com`, which the page presents as case-file sync, so heavy transfers have a reason. `status.casedigestai.com` is kept for links issued before ADR-0014; once every device has the new link it can go.
 
-- Cloudflare holds the domain's DNS and proxies both names (orange cloud, SSL mode "Full (strict)"). Clients and visitors connect to Cloudflare; Cloudflare connects to the server.
+- Cloudflare holds the domain's DNS and proxies every name (orange cloud, SSL mode "Full (strict)"). Clients and visitors connect to Cloudflare; Cloudflare connects to the server.
 - nginx on the host answers on port 80 (certificate challenge, redirect to HTTPS) and on port 443 with the Let's Encrypt certificate. One random path on 443 goes to the Xray XHTTP inbound on `127.0.0.1:10443`; every other path is the site. Its config, `/etc/nginx/conf.d/cover-site.conf`, is written by `deploy-vpn.sh`.
 - ufw admits 80 and 443 only from Cloudflare's IPv4 ranges, fetched by the deploy script into `/root/vpn/cloudflare-ips-v4.txt`. Re-run the script when Cloudflare changes its ranges.
 - The pages come from a Docker container in `/opt/cover-site`, published on `127.0.0.1:8080` only. The source is the repo's `site/` folder; change the page there and re-run the deploy script.
@@ -114,6 +114,8 @@ Secrets stay on the VPS, readable by root only:
 To show the client link: `ssh zcom-th 'sudo -n cat /root/vpn/vless-link.txt'`. Do not paste it into the repo (rule 2).
 
 The link names the profile `กรุงเทพฯ cloud.z.com` (ADR-0011). Happ shows a new name only after the link is imported again; the group ("Server-List") and the main icon are the app's own, and there is no subscription or traffic counter in the app (ADR-0010 was tried and dropped). The panel's own counter shows the client's traffic.
+
+The link's `extra` parameter carries XHTTP padding and connection rotation (ADR-0014): a connection to Cloudflare takes no new sessions after 2 to 5 minutes or 32 to 64 sessions. [TODO-CLARIFY: does Happ apply `extra` from a vless:// link?]
 
 The panel listens on 127.0.0.1 only (ADR-0002). To open it, read the port and path from `install-result.env`, then tunnel:
 

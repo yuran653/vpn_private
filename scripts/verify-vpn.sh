@@ -22,7 +22,13 @@ readonly VPN_PORT=443
 readonly XHTTP_PORT=10443
 readonly CF_IPS_FILE=/root/vpn/cloudflare-ips-v4.txt
 readonly COVER_DOMAIN=casedigestai.com
-readonly COVER_NAME=status.casedigestai.com
+readonly COVER_NAME=files.casedigestai.com
+# Kept for links from before ADR-0014.
+readonly OLD_COVER_NAME=status.casedigestai.com
+# XHTTP padding and rotation bounds (ADR-0014, R-vpn-server-18).
+readonly PADDING_RANGE=100-1000
+readonly MAX_REUSE_SECS=300
+readonly MAX_REUSE_SESSIONS=64
 readonly COVER_PAGE_TEXT='CaseDigest AI'
 readonly COVER_CERT=/etc/letsencrypt/live/$COVER_DOMAIN/fullchain.pem
 
@@ -58,7 +64,8 @@ print(json.dumps({
             {"id": u.username, "encryption": "none"}]}]},
         "streamSettings": {"network": q["type"], "security": q["security"],
             "tlsSettings": {"serverName": q["sni"], "fingerprint": q["fp"], "alpn": q["alpn"].split(",")},
-            "xhttpSettings": {"host": q["host"], "path": q["path"], "mode": q.get("mode", "auto")}}}]}))
+            "xhttpSettings": {"host": q["host"], "path": q["path"], "mode": q.get("mode", "auto"),
+                "extra": json.loads(q.get("extra", "{}"))}}}]}))
 PY
 server_ip=$(ip -4 route get 1.1.1.1 | awk '{for (i = 1; i < NF; i++) if ($i == "src") print $(i + 1)}')
 link_host=$(python3 -I -c 'import sys,urllib.parse; print(urllib.parse.urlsplit(open(sys.argv[1]).read().strip()).hostname)' "$LINK_FILE")
@@ -228,6 +235,26 @@ check R-vpn-server-14.c "the client link is XHTTP over TLS with sni and host $CO
     python3 -I -c 'import sys, urllib.parse; q = dict(urllib.parse.parse_qsl(urllib.parse.urlsplit(open(sys.argv[1]).read().strip()).query)); sys.exit(0 if (q.get("type"), q.get("security"), q.get("sni"), q.get("host")) == ("xhttp", "tls", sys.argv[2], sys.argv[2]) else 1)' \
     "$LINK_FILE" "$COVER_NAME"
 
+# R-vpn-server-18.a: the link makes a connection take no new sessions after at
+# most 300 seconds and 64 sessions, and pads requests with 100-1000 bytes. A
+# range "a-b" must have b within the bound; a missing setting means Xray's
+# default (30-50 minutes), which fails.
+check R-vpn-server-18.a "the client link rotates connections within ${MAX_REUSE_SECS}s and ${MAX_REUSE_SESSIONS} sessions, padding $PADDING_RANGE" \
+    python3 -I -c 'import json, sys, urllib.parse
+q = dict(urllib.parse.parse_qsl(urllib.parse.urlsplit(open(sys.argv[1]).read().strip()).query))
+e = json.loads(q.get("extra", "{}")); x = e.get("xmux", {})
+def top(v):
+    v = str(v); return int(v.split("-")[-1]) if v.replace("-", "").isdigit() else 0
+ok = (e.get("xPaddingBytes") == sys.argv[2]
+      and 0 < top(x.get("hMaxReusableSecs", 0)) <= int(sys.argv[3])
+      and 0 < top(x.get("cMaxReuseTimes", 0)) <= int(sys.argv[4]))
+sys.exit(0 if ok else 1)' "$LINK_FILE" "$PADDING_RANGE" "$MAX_REUSE_SECS" "$MAX_REUSE_SESSIONS"
+
+# R-vpn-server-18.c: the tunnel inbound pads its responses with the same range.
+check R-vpn-server-18.c "the tunnel inbound pads responses with $PADDING_RANGE bytes" \
+    jq -e --arg p "$PADDING_RANGE" '[.inbounds[] | select(.streamSettings.network == "xhttp")
+        | .streamSettings.xhttpSettings.xPaddingBytes] == [$p]' "$XRAY_CONFIG"
+
 # R-vpn-server-17.a (inside half): the link names the cover name, not an
 # address, and that name resolves to Cloudflare's ranges only.
 resolved=$(getent ahostsv4 "$link_host" | awk '{print $1}' | sort -u | tr '\n' ' ')
@@ -245,15 +272,18 @@ printf '%s' "$probe" | grep -qF "$COVER_PAGE_TEXT" \
     && pass R-vpn-server-04.a "client without the key gets a valid certificate for $COVER_NAME and the landing page" \
     || fail R-vpn-server-04.a "client without the key did not get the landing page with a valid certificate"
 
-# R-vpn-server-04.b (inside half): the bare domain, and a client that sends no
-# name at all, get the same site's certificate instead of a reset.
+# R-vpn-server-04.b (inside half): the bare domain, the old cover name, and a
+# client that sends no name at all, get the same site's certificate instead of
+# a reset.
 bare=$(curl -s --max-time 15 --resolve "$COVER_DOMAIN:$VPN_PORT:127.0.0.1" "https://$COVER_DOMAIN/")
+old=$(curl -s --max-time 15 --resolve "$OLD_COVER_NAME:$VPN_PORT:127.0.0.1" "https://$OLD_COVER_NAME/")
 noname=$(echo | timeout 15 openssl s_client -connect "127.0.0.1:$VPN_PORT" -noservername 2>/dev/null \
     | openssl x509 -noout -checkhost "$COVER_NAME" 2>/dev/null)
-if printf '%s' "$bare" | grep -qF "$COVER_PAGE_TEXT" && printf '%s' "$noname" | grep -q 'does match'; then
-    pass R-vpn-server-04.b "the bare domain and a client with no server name get the site's certificate"
+if printf '%s' "$bare" | grep -qF "$COVER_PAGE_TEXT" && printf '%s' "$old" | grep -qF "$COVER_PAGE_TEXT" \
+    && printf '%s' "$noname" | grep -q 'does match'; then
+    pass R-vpn-server-04.b "the bare domain, $OLD_COVER_NAME and a client with no server name get the site's certificate"
 else
-    fail R-vpn-server-04.b "the bare domain or a client with no server name did not get the site's certificate"
+    fail R-vpn-server-04.b "the bare domain, $OLD_COVER_NAME or a client with no server name did not get the site's certificate"
 fi
 
 # R-vpn-server-04.c: the tunnel inbound listens on loopback only, and the web

@@ -21,14 +21,15 @@
 #      VLESS + Reality inbound that held 443 before is removed (cut-over)
 #   8. ufw: 80/tcp and 443/tcp admitted from Cloudflare's IPv4 ranges only
 #   9. the client link written to /root/vpn/vless-link.txt (mode 600); it
-#      names status.casedigestai.com, not the server's address
+#      names files.casedigestai.com, not the server's address, and carries
+#      the connection rotation settings (ADR-0014)
 #
 # Usage, on the VPS as root or via sudo, with the repo's site/ folder next to
 # this script (or its path in SITE_SRC):
 #   sudo -n bash deploy-vpn.sh
 #
 # Run scripts/harden-vps.sh first: this script expects ufw to be active.
-# Both cover names must be proxied by Cloudflare (orange cloud, SSL mode
+# Every site name must be proxied by Cloudflare (orange cloud, SSL mode
 # "Full (strict)") before the run; the script checks that they resolve to
 # Cloudflare only and stops before it changes the tunnel if not.
 #
@@ -53,13 +54,22 @@ readonly XUI_RESULT=/etc/x-ui/install-result.env
 
 readonly VPN_PORT=443
 # Cover site (ADR-0012) behind Cloudflare (ADR-0013). Clients connect to
-# COVER_NAME, which Cloudflare proxies to nginx on VPN_PORT. Both names are on
-# one Let's Encrypt certificate. nginx takes the pages from the site container
+# COVER_NAME, which Cloudflare proxies to nginx on VPN_PORT (ADR-0014: a
+# case-file sync name, where heavy transfers are normal). SITE_NAMES are all
+# the site's names, on one Let's Encrypt certificate; status. is kept so
+# devices with the link from before ADR-0014 keep working. nginx takes the pages from the site container
 # on COVER_SITE_PORT and hands the tunnel path to Xray on XHTTP_PORT. Before
 # the cut-over nginx's TLS side waits on STAGING_TLS_PORT. All three are on
 # loopback only.
 readonly COVER_DOMAIN=casedigestai.com
-readonly COVER_NAME=status.casedigestai.com
+readonly COVER_NAME=files.casedigestai.com
+readonly SITE_NAMES=("$COVER_DOMAIN" "$COVER_NAME" status.casedigestai.com)
+# XHTTP padding and connection rotation (ADR-0014). The server and the link use
+# the same padding range: the server refuses padding outside its own range.
+# XMUX is client behavior and travels in the link's `extra` parameter: a
+# connection takes no new sessions after 2-5 minutes or 32-64 sessions.
+readonly XHTTP_PADDING=100-1000
+readonly XHTTP_XMUX='{"maxConcurrency":"16-32","cMaxReuseTimes":"32-64","hMaxRequestTimes":"600-900","hMaxReusableSecs":"120-300"}'
 readonly STAGING_TLS_PORT=8443
 readonly COVER_SITE_PORT=8080
 readonly XHTTP_PORT=10443
@@ -421,8 +431,8 @@ log "xray template applied"
 
 
 # 6. Cover site (ADR-0012), published through Cloudflare (ADR-0013). The
-#    website of COVER_DOMAIN and COVER_NAME runs on this host; Cloudflare
-#    proxies both names, and nginx on 443 hands the tunnel path to Xray.
+#    website of SITE_NAMES runs on this host; Cloudflare
+#    proxies every name, and nginx on 443 hands the tunnel path to Xray.
 #    Everything in this step is in place and tested before the cut-over in
 #    step 7: a failure here leaves the tunnel as it was.
 case "$XUI_PANEL_PORT" in
@@ -502,13 +512,13 @@ else
 fi
 mapfile -t cf_ranges < "$CF_IPS_FILE"
 
-# Both names must resolve to Cloudflare only: the domain is on Cloudflare and
-# both records are proxied. Checked before a certificate is requested and
+# Every name must resolve to Cloudflare only: the domain is on Cloudflare and
+# every record is proxied. Checked before a certificate is requested and
 # before the cut-over, so the tunnel never moves to a name that does not lead
 # through Cloudflare.
 names_on_cloudflare() {
     local name resolved
-    for name in "$COVER_DOMAIN" "$COVER_NAME"; do
+    for name in "${SITE_NAMES[@]}"; do
         resolved=$(getent ahostsv4 "$name" | awk '{print $1}' | sort -u | tr '\n' ' ')
         [ -n "$resolved" ] || die "$name does not resolve; add it in Cloudflare as a proxied record (the tunnel is unchanged)"
         # shellcheck disable=SC2086
@@ -521,7 +531,7 @@ PY
     done
 }
 names_on_cloudflare
-log "both names resolve to Cloudflare only"
+log "all site names resolve to Cloudflare only"
 
 # Firewall: 80 and 443 from Cloudflare's ranges. Rules for ranges Cloudflare
 # no longer lists are deleted. The rules that admit everyone are deleted at the
@@ -562,18 +572,17 @@ printf '%s' "$xhttp_path" | grep -Eqx '/[0-9a-f]{24}' || die "the tunnel path in
 rm -f /etc/nginx/sites-enabled/default
 sed -i -E 's|^([[:space:]]*)access_log[[:space:]].*;|\1access_log off;|' /etc/nginx/nginx.conf
 install -d -m 755 "$ACME_ROOT"
-cover_domain_re=${COVER_DOMAIN//./\\.}
-cover_name_re=${COVER_NAME//./\\.}
+site_names_re=$(printf '%s|' "${SITE_NAMES[@]}"); site_names_re=${site_names_re%|}; site_names_re=${site_names_re//./\\.}
 write_nginx_conf() { # write_nginx_conf [<tls listen address>]
     cat > "$work/cover-site.conf" <<EOF
 # Written by deploy-vpn.sh (ADR-0012, ADR-0013). Edits are overwritten on the next run.
 server {
     listen 80 default_server;
-    server_name $COVER_DOMAIN $COVER_NAME;
+    server_name ${SITE_NAMES[*]};
     server_tokens off;
     access_log off;
     set \$cover_host $COVER_DOMAIN;
-    if (\$host ~ ^($cover_domain_re|$cover_name_re)\$) { set \$cover_host \$host; }
+    if (\$host ~ ^($site_names_re)\$) { set \$cover_host \$host; }
     location ^~ /.well-known/acme-challenge/ { root $ACME_ROOT; default_type text/plain; }
     location / { return 301 https://\$cover_host\$request_uri; }
 }
@@ -582,7 +591,7 @@ EOF
         cat >> "$work/cover-site.conf" <<EOF
 server {
     listen $1 ssl http2 default_server;
-    server_name $COVER_DOMAIN $COVER_NAME;
+    server_name ${SITE_NAMES[*]};
     server_tokens off;
     access_log off;
     ssl_certificate $COVER_CERT_DIR/fullchain.pem;
@@ -626,10 +635,12 @@ EOF
     systemctl reload-or-restart nginx
 }
 cert_covers_names() {
+    local name
     [ -s "$COVER_CERT_DIR/fullchain.pem" ] \
-        && openssl x509 -in "$COVER_CERT_DIR/fullchain.pem" -noout -checkend 0 >/dev/null \
-        && openssl x509 -in "$COVER_CERT_DIR/fullchain.pem" -noout -checkhost "$COVER_DOMAIN" | grep -q 'does match' \
-        && openssl x509 -in "$COVER_CERT_DIR/fullchain.pem" -noout -checkhost "$COVER_NAME" | grep -q 'does match'
+        && openssl x509 -in "$COVER_CERT_DIR/fullchain.pem" -noout -checkend 0 >/dev/null || return 1
+    for name in "${SITE_NAMES[@]}"; do
+        openssl x509 -in "$COVER_CERT_DIR/fullchain.pem" -noout -checkhost "$name" | grep -q 'does match' || return 1
+    done
 }
 reality_id=$(api_ok "list inbounds" panel/api/inbounds/list \
     | jq -r --argjson p "$VPN_PORT" '[.obj[] | select(.port == $p and .protocol == "vless")][0].id // empty')
@@ -643,9 +654,9 @@ else
 fi
 if cert_covers_names; then write_nginx_conf "$tls_listen"; else write_nginx_conf; fi
 
-# Certificate for both names from Let's Encrypt, by a challenge file served on
+# Certificate for every site name from Let's Encrypt, by a challenge file served on
 # port 80; Cloudflare passes the challenge through to this host. Requested only
-# when no valid certificate covers both names. Requesting accepts Let's
+# when no valid certificate covers every name. Requesting accepts Let's
 # Encrypt's subscriber agreement for the owner; no email address is registered.
 install -d -m 755 /etc/letsencrypt/renewal-hooks/deploy
 cat > /etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh <<'EOF'
@@ -655,23 +666,23 @@ EOF
 chmod 755 /etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh
 if ! cert_covers_names; then
     certbot certonly --webroot -w "$ACME_ROOT" --cert-name "$COVER_DOMAIN" \
-        -d "$COVER_DOMAIN" -d "$COVER_NAME" --non-interactive --agree-tos \
+        $(printf -- '-d %s ' "${SITE_NAMES[@]}") --non-interactive --agree-tos \
         --register-unsafely-without-email > "$STATE_DIR/certbot.log" 2>&1 \
         || die "the certificate was not issued; see $STATE_DIR/certbot.log on the VPS (the tunnel is unchanged)"
-    cert_covers_names || die "the issued certificate does not cover both names"
+    cert_covers_names || die "the issued certificate does not cover every site name"
     write_nginx_conf "$tls_listen"
-    log "certificate issued for $COVER_DOMAIN and $COVER_NAME"
+    log "certificate issued for ${SITE_NAMES[*]}"
 else
-    log "certificate for $COVER_DOMAIN and $COVER_NAME is valid; kept"
+    log "certificate for ${SITE_NAMES[*]} is valid; kept"
 fi
 systemctl enable --now certbot.timer >/dev/null 2>&1
 # The site must answer over TLS on loopback, with a certificate that validates
 # for each name, before the cut-over.
-for name in "$COVER_DOMAIN" "$COVER_NAME"; do
+for name in "${SITE_NAMES[@]}"; do
     serves_page --http2 --resolve "$name:$tls_port:127.0.0.1" "https://$name:$tls_port/" \
         || die "the cover site does not answer for $name on loopback (the tunnel is unchanged)"
 done
-log "cover site answers for both names on loopback"
+log "cover site answers for every name on loopback"
 
 # 7. Cut-over (ADR-0013). The Reality inbound on 443 is deleted and the XHTTP
 #    inbound takes its client ID; the inbound as it was is kept, root-only, so
@@ -699,7 +710,7 @@ if [ -z "$xhttp_id" ]; then
         api_ok "delete leftover client" panel/api/clients/del/"$CLIENT_EMAIL" -X POST >/dev/null
         log "leftover client '$CLIENT_EMAIL' from the removed inbound deleted"
     fi
-    jq -n --arg uuid "$uuid" --arg path "$xhttp_path" --arg remark "$INBOUND_REMARK" \
+    jq -n --arg uuid "$uuid" --arg path "$xhttp_path" --arg remark "$INBOUND_REMARK" --arg padding "$XHTTP_PADDING" \
         --arg email "$CLIENT_EMAIL" --argjson port "$XHTTP_PORT" '{
         enable: true, remark: $remark, listen: "127.0.0.1", port: $port, protocol: "vless",
         expiryTime: 0, total: 0,
@@ -709,7 +720,7 @@ if [ -z "$xhttp_id" ]; then
             decryption: "none", fallbacks: []},
         streamSettings: {
             network: "xhttp", security: "none", externalProxy: [],
-            xhttpSettings: {path: $path, host: "", headers: {}, mode: "auto"}},
+            xhttpSettings: {path: $path, host: "", headers: {}, mode: "auto", xPaddingBytes: $padding}},
         sniffing: {enabled: true, destOverride: ["http", "tls", "quic"],
                    metadataOnly: false, routeOnly: false}}' > "$work/inbound.json"
     api_ok "add inbound" panel/api/inbounds/add -X POST \
@@ -720,14 +731,21 @@ if [ -z "$xhttp_id" ]; then
 else
     log "XHTTP inbound already exists; client ID and path kept"
 fi
-# The inbound's name is the profile name in the client app (ADR-0011).
+# The inbound's name is the profile name in the client app (ADR-0011), and it
+# pads its responses (ADR-0014). The panel may hand streamSettings back as a
+# JSON string; it is sent back in the same form, and compared parsed.
 api_ok "read inbound" "panel/api/inbounds/get/$xhttp_id" | jq '.obj | del(.clientStats)' > "$work/inbound-now.json"
-jq --arg remark "$INBOUND_REMARK" '.remark = $remark | .listen = "127.0.0.1"' \
+jq --arg remark "$INBOUND_REMARK" --arg padding "$XHTTP_PADDING" '
+    .remark = $remark | .listen = "127.0.0.1"
+    | .streamSettings |= (if type == "string"
+        then (fromjson | .xhttpSettings.xPaddingBytes = $padding | tojson)
+        else .xhttpSettings.xPaddingBytes = $padding end)' \
     "$work/inbound-now.json" > "$work/inbound-want.json"
-if [ "$(jq -S . "$work/inbound-now.json")" != "$(jq -S . "$work/inbound-want.json")" ]; then
+inbound_norm() { jq -S '.streamSettings |= (if type == "string" then fromjson else . end)' "$1"; }
+if [ "$(inbound_norm "$work/inbound-now.json")" != "$(inbound_norm "$work/inbound-want.json")" ]; then
     api_ok "update inbound" "panel/api/inbounds/update/$xhttp_id" -X POST \
         -H 'Content-Type: application/json' -d @"$work/inbound-want.json" >/dev/null
-    log "XHTTP inbound updated: profile name, loopback only"
+    log "XHTTP inbound updated: profile name, loopback only, padding"
 fi
 
 api_ok "restart xray" panel/api/server/restartXrayService -X POST >/dev/null
@@ -744,7 +762,7 @@ fi
 log "xray listening on 127.0.0.1:$XHTTP_PORT"
 
 write_nginx_conf "$VPN_PORT"
-for name in "$COVER_DOMAIN" "$COVER_NAME"; do
+for name in "${SITE_NAMES[@]}"; do
     serves_page --http2 --resolve "$name:$VPN_PORT:127.0.0.1" "https://$name:$VPN_PORT/" \
         || die "nginx does not answer for $name on ${VPN_PORT}"
 done
@@ -781,12 +799,13 @@ log "80/tcp and ${VPN_PORT}/tcp closed to everyone but Cloudflare"
 #    address: the client reaches Cloudflare, which reaches this server.
 #    Written to a root-only file.
 api_ok "read inbound" "panel/api/inbounds/get/$xhttp_id" | jq -r \
-    --arg host "$COVER_NAME" --argjson port "$VPN_PORT" --arg email "$CLIENT_EMAIL" --arg name "$INBOUND_REMARK" '
+    --arg host "$COVER_NAME" --argjson port "$VPN_PORT" --arg email "$CLIENT_EMAIL" --arg name "$INBOUND_REMARK" \
+    --arg padding "$XHTTP_PADDING" --argjson xmux "$XHTTP_XMUX" '
     .obj as $in
     | ($in.settings | if type == "string" then fromjson else . end) as $s
     | ($in.streamSettings | if type == "string" then fromjson else . end) as $st
     | ($s.clients[] | select(.email == $email)) as $c
-    | "vless://\($c.id)@\($host):\($port)?encryption=none&security=tls&sni=\($host)&fp=chrome&alpn=h2%2Chttp%2F1.1&type=xhttp&host=\($host)&path=\($st.xhttpSettings.path | @uri)&mode=auto#\($name | @uri)"' \
+    | "vless://\($c.id)@\($host):\($port)?encryption=none&security=tls&sni=\($host)&fp=chrome&alpn=h2%2Chttp%2F1.1&type=xhttp&host=\($host)&path=\($st.xhttpSettings.path | @uri)&mode=auto&extra=\({xPaddingBytes: $padding, xmux: $xmux} | tojson | @uri)#\($name | @uri)"' \
     > "$LINK_FILE"
 chmod 600 "$LINK_FILE"
 grep -q '^vless://' "$LINK_FILE" || die "client link was not written"

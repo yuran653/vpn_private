@@ -18,7 +18,9 @@ set -uo pipefail
 
 readonly HOST_ALIAS=${1:-zcom-th}
 readonly COVER_DOMAIN=casedigestai.com
-readonly COVER_NAME=status.casedigestai.com
+readonly COVER_NAME=files.casedigestai.com
+# Every name of the site (ADR-0014); status. stays for links from before it.
+readonly SITE_NAMES=("$COVER_DOMAIN" "$COVER_NAME" status.casedigestai.com)
 readonly COVER_PAGE_TEXT='CaseDigest AI'
 readonly CF_IPS_URL=https://www.cloudflare.com/ips-v4
 
@@ -63,13 +65,15 @@ printf '%s' "$page" | grep -qF "$COVER_PAGE_TEXT" \
     && pass R-vpn-server-04.a "https://$COVER_NAME gives a trusted certificate and the landing page" \
     || fail R-vpn-server-04.a "https://$COVER_NAME did not give the landing page with a trusted certificate"
 
-# R-vpn-server-04.b (outside half): the bare domain gets the same site. A
+# R-vpn-server-04.b (outside half): the other names get the same site. A
 # client with no name at all reaches Cloudflare, not the server; that half is
 # checked on the server by verify-vpn.sh.
-bare=$(curl -s --max-time 20 "https://$COVER_DOMAIN/")
-printf '%s' "$bare" | grep -qF "$COVER_PAGE_TEXT" \
-    && pass R-vpn-server-04.b "https://$COVER_DOMAIN gives the same site" \
-    || fail R-vpn-server-04.b "https://$COVER_DOMAIN did not give the landing page"
+for name in "${SITE_NAMES[@]}"; do
+    [ "$name" = "$COVER_NAME" ] && continue
+    curl -s --max-time 20 "https://$name/" | grep -qF "$COVER_PAGE_TEXT" \
+        && pass R-vpn-server-04.b "https://$name gives the same site" \
+        || fail R-vpn-server-04.b "https://$name did not give the landing page"
+done
 
 # R-vpn-server-05.b: the panel port, the usual panel and subscription ports, and
 # the loopback ports of the tunnel inbound (10443), the web server's staging
@@ -92,9 +96,9 @@ for port in 80 443; do answers "$port" && open_ports="$open_ports $port"; done
     && pass R-vpn-server-17.b "the server's own address gives no answer on 80 or 443" \
     || fail R-vpn-server-17.b "the server's own address answers on:$open_ports"
 
-# R-vpn-server-15.a and R-vpn-server-17.a (outside half): both names resolve,
+# R-vpn-server-15.a and R-vpn-server-17.a (outside half): every name resolves,
 # to Cloudflare's ranges only, and never to the server's own address.
-for name in "$COVER_DOMAIN" "$COVER_NAME"; do
+for name in "${SITE_NAMES[@]}"; do
     resolved=$(resolve "$name")
     case " $resolved" in
         *" $server_ip "*) fail R-vpn-server-15.a "$name resolves to the server's own address" ;;
@@ -107,9 +111,9 @@ for name in "$COVER_DOMAIN" "$COVER_NAME"; do
         || fail R-vpn-server-17.a "$name resolves to '${resolved:-nothing}', not only Cloudflare"
 done
 
-# R-vpn-server-15.b: a browser that opens either name gets a trusted
+# R-vpn-server-15.b: a browser that opens any name gets a trusted
 # certificate for it and the landing page.
-for name in "$COVER_DOMAIN" "$COVER_NAME"; do
+for name in "${SITE_NAMES[@]}"; do
     curl -s --max-time 20 "https://$name/" | grep -qF "$COVER_PAGE_TEXT" \
         && pass R-vpn-server-15.b "https://$name shows the landing page with a trusted certificate" \
         || fail R-vpn-server-15.b "https://$name did not show the landing page with a trusted certificate"
@@ -132,8 +136,16 @@ else
     fail R-vpn-server-15.d "the landing page is missing or mentions a VPN or Thailand"
 fi
 
+# R-vpn-server-15.f: the page presents case-file sync at the link's name, so
+# heavy transfers to that name have a reason (ADR-0014).
+if [ -n "$page" ] && printf '%s' "$page" | grep -qF 'Case files, synced' && printf '%s' "$page" | grep -qF "$COVER_NAME"; then
+    pass R-vpn-server-15.f "the landing page describes case-file sync at $COVER_NAME"
+else
+    fail R-vpn-server-15.f "the landing page does not describe case-file sync at $COVER_NAME"
+fi
+
 # R-vpn-server-15.e: plain HTTP is redirected to HTTPS on the same name and path.
-for name in "$COVER_DOMAIN" "$COVER_NAME"; do
+for name in "${SITE_NAMES[@]}"; do
     redirect=$(curl -s -o /dev/null -w '%{http_code} %{redirect_url}' --max-time 10 "http://$name/check")
     case "$redirect" in
         30[178]" https://$name/check")

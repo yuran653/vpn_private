@@ -19,6 +19,7 @@ Format: `- Do not <approach>: <one-line reason>. (ADR-NNNN)`
 - Do not give clients a link to the server's own address, or any way in that does not pass through Cloudflare: the ISP then sees a hosting provider's address (flag 2). (ADR-0013)
 - Do not admit 80/tcp or 443/tcp from outside Cloudflare's published ranges: the server's address must not answer probes directly. (ADR-0013)
 - Do not limit connections per source address on port 443: every client arrives from a shared Cloudflare address. (ADR-0013)
+- Do not set `xPaddingBytes` on the server to a range the client link does not share: the server rejects requests whose padding is outside its range. (ADR-0014)
 
 ## Log
 
@@ -39,3 +40,4 @@ One row per decision record in this folder. Files are named `ADR-NNNN-<slug>.md`
 | [ADR-0011](ADR-0011-no-subscription-name-in-the-link.md) | No subscription; the profile name travels in the client link | accepted | 2026-11-11 |
 | [ADR-0012](ADR-0012-own-domain-cover-site.md) | Cover site on the owner's own domain, served from the VPS | accepted; the Reality inbound superseded by ADR-0013 | 2026-11-12 |
 | [ADR-0013](ADR-0013-clients-only-through-cloudflare.md) | Clients reach the server only through Cloudflare | accepted | 2026-11-12 |
+| [ADR-0014](ADR-0014-browser-like-connections-files-name.md) | Browser-like connection rotation and a cover name for heavy traffic | accepted | 2026-11-12 |
