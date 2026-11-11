@@ -629,8 +629,14 @@ cert_covers_names() {
 }
 reality_id=$(api_ok "list inbounds" panel/api/inbounds/list \
     | jq -r --argjson p "$VPN_PORT" '[.obj[] | select(.port == $p and .protocol == "vless")][0].id // empty')
-if [ -n "$reality_id" ]; then tls_port=$STAGING_TLS_PORT; tls_listen=127.0.0.1:$STAGING_TLS_PORT
-else tls_port=$VPN_PORT; tls_listen=$VPN_PORT; fi
+# Until Xray lets go of 443, nginx's TLS side waits on loopback. Decided by who
+# holds the port, not by the inbound list: a deleted inbound keeps its port
+# until Xray restarts.
+if [ -n "$reality_id" ] || ss -Htlnp "sport = :$VPN_PORT" | grep -q '"xray'; then
+    tls_port=$STAGING_TLS_PORT; tls_listen=127.0.0.1:$STAGING_TLS_PORT
+else
+    tls_port=$VPN_PORT; tls_listen=$VPN_PORT
+fi
 if cert_covers_names; then write_nginx_conf "$tls_listen"; else write_nginx_conf; fi
 
 # Certificate for both names from Let's Encrypt, by a challenge file served on
@@ -682,6 +688,13 @@ if [ -z "$xhttp_id" ]; then
     printf '%s' "$uuid" | grep -Eq '^[0-9a-f-]{36}$' \
         || uuid=$(api_ok "new uuid" panel/api/server/getNewUUID | jq -r '.obj.uuid // .obj')
     printf '%s' "$uuid" | grep -Eq '^[0-9a-f-]{36}$' || die "panel returned no UUID"
+    # 3x-ui keeps clients in their own table: deleting an inbound leaves its
+    # client behind, and a new inbound may not reuse that email. The leftover
+    # client, attached to no inbound, is deleted; its ID is reused above.
+    if api panel/api/clients/get/"$CLIENT_EMAIL" 2>/dev/null | jq -e '.success == true' >/dev/null; then
+        api_ok "delete leftover client" panel/api/clients/del/"$CLIENT_EMAIL" -X POST >/dev/null
+        log "leftover client '$CLIENT_EMAIL' from the removed inbound deleted"
+    fi
     jq -n --arg uuid "$uuid" --arg path "$xhttp_path" --arg remark "$INBOUND_REMARK" \
         --arg email "$CLIENT_EMAIL" --argjson port "$XHTTP_PORT" '{
         enable: true, remark: $remark, listen: "127.0.0.1", port: $port, protocol: "vless",

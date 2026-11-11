@@ -287,7 +287,8 @@ fi
 ufw status | awk '/ ALLOW / {print $1 " " $3}' | sort -u > "$work/ufw-rules"
 {
     printf '%s/tcp Anywhere\n' "$ssh_port"
-    while read -r range; do
+    # Cloudflare's list has no newline after its last range; read that one too.
+    while read -r range || [ -n "$range" ]; do
         [ -n "$range" ] && printf '80/tcp %s\n%s/tcp %s\n' "$range" "$VPN_PORT" "$range"
     done < "$CF_IPS_FILE"
 } | sort -u > "$work/ufw-want"
