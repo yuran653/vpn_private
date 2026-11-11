@@ -13,14 +13,22 @@
 #   5. Xray template: all client traffic out through Cloudflare WARP (the server
 #      is registered once as a free WARP device, ADR-0008), encrypted DNS,
 #      IPv4-only egress, port-53 capture, no access log
-#   6. one VLESS + Reality + Vision inbound on 443/tcp with one client
-#   7. ufw: 443/tcp allowed, with per-address limits on new connections (ADR-0005)
-#   8. the client link written to /root/vpn/vless-link.txt (mode 600)
+#   6. the cover site (ADR-0012): the owner's own website on this host. nginx
+#      answers on 80/tcp and, with a Let's Encrypt certificate, on loopback;
+#      the pages come from a Docker container published on loopback only
+#   7. one VLESS + Reality + Vision inbound on 443/tcp with one client; a
+#      connection without the client key is handed to the cover site
+#   8. ufw: 80/tcp and 443/tcp allowed, with per-address limits on new
+#      connections to 443 (ADR-0005)
+#   9. the client link written to /root/vpn/vless-link.txt (mode 600)
 #
-# Usage, on the VPS as root or via sudo:
+# Usage, on the VPS as root or via sudo, with the repo's site/ folder next to
+# this script (or its path in SITE_SRC):
 #   sudo -n bash deploy-vpn.sh
 #
 # Run scripts/harden-vps.sh first: this script expects ufw to be active.
+# The A records of both cover names must point at this host before the first
+# run; the script checks them and stops before it changes the tunnel if not.
 #
 # Safe to re-run. Keys, the client ID and panel credentials are generated once
 # and kept; a re-run reapplies the settings and leaves the client link unchanged.
@@ -40,7 +48,20 @@ readonly XUI_BIN=/usr/local/x-ui/x-ui
 readonly XUI_RESULT=/etc/x-ui/install-result.env
 
 readonly VPN_PORT=443
-readonly REALITY_TARGET=www.samsung.com
+# Cover site (ADR-0012). Clients send COVER_NAME as the TLS server name. Both
+# names resolve to this host and are on one certificate. Xray hands a handshake
+# without the client key to nginx on COVER_TLS_PORT; nginx takes the pages from
+# the site container on COVER_SITE_PORT. Both ports are on loopback only.
+readonly COVER_DOMAIN=casedigestai.com
+readonly COVER_NAME=status.casedigestai.com
+readonly COVER_TLS_PORT=8443
+readonly COVER_SITE_PORT=8080
+readonly COVER_DIR=/opt/cover-site
+readonly COVER_NGINX_CONF=/etc/nginx/conf.d/cover-site.conf
+readonly COVER_CERT_DIR=/etc/letsencrypt/live/$COVER_DOMAIN
+readonly COVER_PAGE_TEXT='CaseDigest AI'
+readonly ACME_ROOT=/var/www/acme
+readonly SITE_SRC=${SITE_SRC:-$(cd "$(dirname "$0")" && pwd)/site}
 # The inbound's name is the profile name the client app shows (ADR-0011).
 readonly INBOUND_REMARK='กรุงเทพฯ cloud.z.com'
 readonly CLIENT_EMAIL=owner
@@ -88,6 +109,8 @@ die() { printf '[deploy] error: %s\n' "$*" >&2; exit 1; }
 . /etc/os-release
 [ "${ID:-}" = ubuntu ] || die "only Ubuntu is supported"
 ufw status | grep -q '^Status: active' || die "ufw is not active; run scripts/harden-vps.sh first"
+[ -s "$SITE_SRC/docker-compose.yml" ] && [ -s "$SITE_SRC/html/index.html" ] \
+    || die "site folder not found at $SITE_SRC; copy the repo's site/ folder next to this script"
 
 umask 077
 install -d -m 700 "$STATE_DIR"
@@ -389,7 +412,171 @@ api_ok "save template" panel/api/xray/update -X POST \
     --data-urlencode "xraySetting@$work/template.json" >/dev/null
 log "xray template applied"
 
-# 6. Inbound. Created once; keys and the client ID are never regenerated.
+# 6. Cover site (ADR-0012). The website of COVER_DOMAIN and COVER_NAME runs on
+#    this host, so the name, the address, the certificate and the page agree,
+#    and a probe is answered here instead of being relayed to a third party.
+#    Everything in this step is in place and tested before the inbound is
+#    pointed at it: a failure here leaves the tunnel as it was.
+case "$XUI_PANEL_PORT" in
+    "$COVER_TLS_PORT"|"$COVER_SITE_PORT") die "the panel port collides with a cover site port" ;;
+esac
+public_ip=$(ip -4 route get 1.1.1.1 | awk '{for (i = 1; i < NF; i++) if ($i == "src") print $(i + 1)}')
+printf '%s' "$public_ip" | grep -Eq '^([0-9]{1,3}\.){3}[0-9]{1,3}$' || die "could not read the public IPv4 address"
+# nginx's packaged default site listens on IPv6, which this host does not have,
+# so the package's own first start fails and takes the install down with it.
+# The start is held back during the install; nginx starts below, once this
+# script's config is in place.
+if ! dpkg -s nginx >/dev/null 2>&1; then
+    printf '#!/bin/sh\nexit 101\n' > /usr/sbin/policy-rc.d
+    chmod 755 /usr/sbin/policy-rc.d
+    apt-get install -y -qq nginx >/dev/null || { rm -f /usr/sbin/policy-rc.d; die "nginx install failed"; }
+    rm -f /usr/sbin/policy-rc.d
+fi
+apt-get install -y -qq certbot docker.io docker-compose-v2 >/dev/null
+
+# Docker publishes ports past ufw, so its default bind address is loopback: a
+# container started without an explicit address is still not reachable from
+# outside. Containers keep no logs and get no IPv6.
+install -d -m 755 /etc/docker
+cat > "$work/daemon.json" <<'EOF'
+{
+  "ip": "127.0.0.1",
+  "ipv6": false,
+  "log-driver": "none"
+}
+EOF
+if ! cmp -s "$work/daemon.json" /etc/docker/daemon.json; then
+    install -m 644 "$work/daemon.json" /etc/docker/daemon.json
+    systemctl restart docker
+fi
+systemctl enable --now docker >/dev/null 2>&1
+
+# The site container. Its files are overwritten in place on every run: the
+# container holds the folder and the config file open by inode, so replacing
+# either with a new one would leave it serving the old copy.
+install -d -m 755 "$COVER_DIR" "$COVER_DIR/html"
+cp -R "$SITE_SRC/html/." "$COVER_DIR/html/"
+cat "$SITE_SRC/nginx.conf" > "$COVER_DIR/nginx.conf"
+install -m 644 "$SITE_SRC/docker-compose.yml" "$COVER_DIR/docker-compose.yml"
+chmod -R a+rX "$COVER_DIR"
+docker compose --project-directory "$COVER_DIR" up -d --quiet-pull >/dev/null 2>"$work/compose.err" \
+    || die "the site container did not start: $(tail -n 3 "$work/compose.err")"
+docker compose --project-directory "$COVER_DIR" exec -T site nginx -s reload >/dev/null 2>&1 || true
+site_up=""
+for _ in $(seq 1 20); do
+    if curl -fsS --max-time 5 "http://127.0.0.1:$COVER_SITE_PORT/" 2>/dev/null | grep -qF "$COVER_PAGE_TEXT"; then
+        site_up=yes; break
+    fi
+    sleep 1
+done
+[ -n "$site_up" ] || die "the site container does not serve the landing page on loopback"
+if ss -Htln "sport = :$COVER_SITE_PORT" | awk '{print $4}' | grep -qv '^127\.'; then
+    die "the site container listens on a public address"
+fi
+log "site container running on loopback"
+
+# nginx on the host. Port 80 serves the certificate challenge and redirects the
+# rest to HTTPS. The TLS side listens on loopback only and is added once the
+# certificate exists. No access log is kept (R-vpn-server-06.b).
+rm -f /etc/nginx/sites-enabled/default
+sed -i -E 's|^([[:space:]]*)access_log[[:space:]].*;|\1access_log off;|' /etc/nginx/nginx.conf
+install -d -m 755 "$ACME_ROOT"
+cover_domain_re=${COVER_DOMAIN//./\\.}
+cover_name_re=${COVER_NAME//./\\.}
+write_nginx_conf() { # write_nginx_conf [tls]
+    cat > "$work/cover-site.conf" <<EOF
+# Written by deploy-vpn.sh (ADR-0012). Edits are overwritten on the next run.
+server {
+    listen 80 default_server;
+    server_name $COVER_DOMAIN $COVER_NAME;
+    server_tokens off;
+    access_log off;
+    set \$cover_host $COVER_DOMAIN;
+    if (\$host ~ ^($cover_domain_re|$cover_name_re)\$) { set \$cover_host \$host; }
+    location ^~ /.well-known/acme-challenge/ { root $ACME_ROOT; default_type text/plain; }
+    location / { return 301 https://\$cover_host\$request_uri; }
+}
+EOF
+    if [ "${1:-}" = tls ]; then
+        cat >> "$work/cover-site.conf" <<EOF
+server {
+    listen 127.0.0.1:$COVER_TLS_PORT ssl http2 default_server;
+    server_name $COVER_DOMAIN $COVER_NAME;
+    server_tokens off;
+    access_log off;
+    ssl_certificate $COVER_CERT_DIR/fullchain.pem;
+    ssl_certificate_key $COVER_CERT_DIR/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_session_tickets off;
+    location / {
+        proxy_pass http://127.0.0.1:$COVER_SITE_PORT;
+        proxy_set_header Host \$host;
+    }
+}
+EOF
+    fi
+    if ! cmp -s "$work/cover-site.conf" "$COVER_NGINX_CONF"; then
+        [ -e "$COVER_NGINX_CONF" ] && cp -p "$COVER_NGINX_CONF" "$work/cover-site.conf.bak"
+        install -m 644 "$work/cover-site.conf" "$COVER_NGINX_CONF"
+        if ! nginx -t >/dev/null 2>"$work/nginx.err"; then
+            if [ -e "$work/cover-site.conf.bak" ]; then
+                cp -p "$work/cover-site.conf.bak" "$COVER_NGINX_CONF"
+            else
+                rm -f "$COVER_NGINX_CONF"
+            fi
+            die "nginx rejected the cover site config: $(tail -n 2 "$work/nginx.err")"
+        fi
+    fi
+    systemctl enable nginx >/dev/null 2>&1
+    systemctl reload-or-restart nginx
+}
+cert_covers_names() {
+    [ -s "$COVER_CERT_DIR/fullchain.pem" ] \
+        && openssl x509 -in "$COVER_CERT_DIR/fullchain.pem" -noout -checkend 0 >/dev/null \
+        && openssl x509 -in "$COVER_CERT_DIR/fullchain.pem" -noout -checkhost "$COVER_DOMAIN" | grep -q 'does match' \
+        && openssl x509 -in "$COVER_CERT_DIR/fullchain.pem" -noout -checkhost "$COVER_NAME" | grep -q 'does match'
+}
+if cert_covers_names; then write_nginx_conf tls; else write_nginx_conf; fi
+ufw allow 80/tcp comment 'cover site HTTP' >/dev/null
+
+# Certificate for both names from Let's Encrypt, by a challenge file served on
+# port 80. Requested only when no valid certificate covers both names. The A
+# records are checked first: a request that cannot succeed counts against Let's
+# Encrypt's limit on failed attempts. Requesting accepts Let's Encrypt's
+# subscriber agreement for the owner; no email address is registered.
+install -d -m 755 /etc/letsencrypt/renewal-hooks/deploy
+cat > /etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh <<'EOF'
+#!/bin/sh
+systemctl reload nginx
+EOF
+chmod 755 /etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh
+if ! cert_covers_names; then
+    for name in "$COVER_DOMAIN" "$COVER_NAME"; do
+        resolved=$(getent ahostsv4 "$name" | awk '{print $1}' | sort -u | tr '\n' ' ')
+        [ "$resolved" = "$public_ip " ] \
+            || die "$name resolves to '${resolved:-nothing}', expected only $public_ip; set its A record and run again (the tunnel is unchanged)"
+    done
+    certbot certonly --webroot -w "$ACME_ROOT" --cert-name "$COVER_DOMAIN" \
+        -d "$COVER_DOMAIN" -d "$COVER_NAME" --non-interactive --agree-tos \
+        --register-unsafely-without-email > "$STATE_DIR/certbot.log" 2>&1 \
+        || die "the certificate was not issued; see $STATE_DIR/certbot.log on the VPS (the tunnel is unchanged)"
+    cert_covers_names || die "the issued certificate does not cover both names"
+    write_nginx_conf tls
+    log "certificate issued for $COVER_DOMAIN and $COVER_NAME"
+else
+    log "certificate for $COVER_DOMAIN and $COVER_NAME is valid; kept"
+fi
+systemctl enable --now certbot.timer >/dev/null 2>&1
+# The site must answer over TLS on loopback, with a certificate that validates
+# for each name, before any probe is sent to it.
+for name in "$COVER_DOMAIN" "$COVER_NAME"; do
+    curl -fsS --max-time 10 --http2 --resolve "$name:$COVER_TLS_PORT:127.0.0.1" "https://$name:$COVER_TLS_PORT/" 2>/dev/null \
+        | grep -qF "$COVER_PAGE_TEXT" \
+        || die "the cover site does not answer for $name on loopback (the tunnel is unchanged)"
+done
+log "cover site answers for both names on loopback"
+
+# 7. Inbound. Created once; keys and the client ID are never regenerated.
 inbound_id() {
     api_ok "list inbounds" panel/api/inbounds/list \
         | jq -r --argjson p "$VPN_PORT" '[.obj[] | select(.port == $p)][0].id // empty'
@@ -400,7 +587,8 @@ if [ -z "$id" ]; then
     uuid=$(api_ok "new uuid" panel/api/server/getNewUUID | jq -r '.obj.uuid // .obj')
     printf '%s' "$uuid" | grep -Eq '^[0-9a-f-]{36}$' || die "panel returned no UUID"
     short_id=$(openssl rand -hex 8)
-    jq -n --arg uuid "$uuid" --arg sid "$short_id" --arg target "$REALITY_TARGET" \
+    jq -n --arg uuid "$uuid" --arg sid "$short_id" \
+        --arg target "127.0.0.1:$COVER_TLS_PORT" --arg name "$COVER_NAME" \
         --arg remark "$INBOUND_REMARK" --arg email "$CLIENT_EMAIL" --argjson port "$VPN_PORT" \
         --slurpfile keys "$work/keys.json" '{
         enable: true, remark: $remark, listen: "", port: $port, protocol: "vless",
@@ -413,7 +601,7 @@ if [ -z "$id" ]; then
             network: "tcp", security: "reality", externalProxy: [],
             tcpSettings: {acceptProxyProtocol: false, header: {type: "none"}},
             realitySettings: {
-                show: false, xver: 0, target: ($target + ":443"), serverNames: [$target],
+                show: false, xver: 0, target: $target, serverNames: [$name],
                 privateKey: $keys[0].obj.privateKey, minClientVer: "", maxClientVer: "",
                 maxTimediff: 0, shortIds: [$sid],
                 settings: {publicKey: $keys[0].obj.publicKey, fingerprint: "chrome",
@@ -429,17 +617,25 @@ else
     log "inbound on ${VPN_PORT}/tcp already exists; keys kept"
 fi
 # The inbound's name is the profile name in the client app. An external proxy
-# list left by the removed subscription (ADR-0010) is emptied. Nothing else changes.
+# list left by the removed subscription (ADR-0010) is emptied. A handshake
+# without the client key goes to the cover site on this host, and the name
+# clients send is the cover name (ADR-0012). Nothing else changes: the keys, the
+# client ID and the short ID stay. The inbound as it was is kept, root-only, so
+# the change can be undone by hand.
 api_ok "read inbound" "panel/api/inbounds/get/$id" | jq '.obj | del(.clientStats)' > "$work/inbound-now.json"
-jq --arg remark "$INBOUND_REMARK" '.remark = $remark | .streamSettings.externalProxy = []' \
+jq --arg remark "$INBOUND_REMARK" --arg target "127.0.0.1:$COVER_TLS_PORT" --arg name "$COVER_NAME" '
+    .remark = $remark | .streamSettings.externalProxy = []
+    | .streamSettings.realitySettings.target = $target
+    | .streamSettings.realitySettings.serverNames = [$name]' \
     "$work/inbound-now.json" > "$work/inbound-want.json"
 if [ "$(jq -S . "$work/inbound-now.json")" != "$(jq -S . "$work/inbound-want.json")" ]; then
+    install -m 600 "$work/inbound-now.json" "$STATE_DIR/inbound-previous.json"
     api_ok "update inbound" "panel/api/inbounds/update/$id" -X POST \
         -H 'Content-Type: application/json' -d @"$work/inbound-want.json" >/dev/null
-    log "inbound named as its profile"
+    log "inbound updated: profile name, cover site on this host"
 fi
 
-# 7. Firewall, then restart Xray so the template and inbound are live.
+# 8. Firewall, then restart Xray so the template and inbound are live.
 ufw allow "${VPN_PORT}/tcp" comment 'VLESS Reality' >/dev/null
 
 # Per-address limits on new connections to the VPN port, as one marked block at
@@ -488,9 +684,7 @@ done
 [ -n "$listening" ] || die "xray is not listening on ${VPN_PORT}/tcp: $(api panel/api/xray/getXrayResult | jq -r '.obj')"
 log "xray listening on ${VPN_PORT}/tcp"
 
-# 8. Client link, built from what the panel stores. Written to a root-only file.
-public_ip=$(ip -4 route get 1.1.1.1 | awk '{for (i = 1; i < NF; i++) if ($i == "src") print $(i + 1)}')
-printf '%s' "$public_ip" | grep -Eq '^([0-9]{1,3}\.){3}[0-9]{1,3}$' || die "could not read the public IPv4 address"
+# 9. Client link, built from what the panel stores. Written to a root-only file.
 api_ok "read inbound" "panel/api/inbounds/get/$id" | jq -r --arg ip "$public_ip" --arg email "$CLIENT_EMAIL" --arg name "$INBOUND_REMARK" '
     .obj as $in
     | ($in.settings.clients[] | select(.email == $email)) as $c

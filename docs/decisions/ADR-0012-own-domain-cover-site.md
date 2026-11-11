@@ -1,6 +1,6 @@
 # ADR-0012: Cover site on the owner's own domain, served from the VPS
 
-- Status: proposed (awaiting the owner's approval of `changes/serve-own-cover-site/proposal.md`)
+- Status: accepted (the owner approved the proposal on 2026-11-12; not deployed yet)
 - Date: 2026-11-12
 - Supersedes: ADR-0003
 - Change: `changes/serve-own-cover-site/`

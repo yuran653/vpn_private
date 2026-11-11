@@ -49,9 +49,9 @@ The change records are in `changes/archive/2026-11-10-apply-vps-baseline/` and `
 `scripts/deploy-vpn.sh` installs 3x-ui and configures the VLESS + Reality server. Run the baseline script first. It takes no arguments and prints no secret:
 
 ```bash
-scp scripts/deploy-vpn.sh scripts/verify-vpn.sh zcom-th:/tmp/
+scp -r scripts/deploy-vpn.sh scripts/verify-vpn.sh site zcom-th:/tmp/
 ssh zcom-th 'sudo -n bash /tmp/deploy-vpn.sh'
-ssh zcom-th 'sudo -n bash /tmp/verify-vpn.sh; sudo -n rm -f /tmp/deploy-vpn.sh /tmp/verify-vpn.sh'
+ssh zcom-th 'sudo -n bash /tmp/verify-vpn.sh; sudo -n rm -rf /tmp/deploy-vpn.sh /tmp/verify-vpn.sh /tmp/site'
 bash scripts/verify-external.sh
 ```
 

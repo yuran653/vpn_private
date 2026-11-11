@@ -4,7 +4,8 @@
 # Runs on the VPS as root. Starts a temporary Xray client on loopback that
 # connects with the issued client link, and checks what a client can and cannot
 # do through the tunnel, plus the host state. Each check names the acceptance
-# criterion it verifies (specs/vpn-server/spec.md). Changes nothing on the host.
+# criterion it verifies (specs/vpn-server/spec.md). Changes nothing on the host,
+# apart from the log lines certbot writes for its renewal rehearsal.
 #
 # Usage:
 #   sudo -n bash verify-vpn.sh
@@ -18,6 +19,10 @@ readonly XRAY=/usr/local/x-ui/bin/xray-linux-amd64
 readonly XRAY_CONFIG=/usr/local/x-ui/bin/config.json
 readonly SOCKS_PORT=10808
 readonly VPN_PORT=443
+readonly COVER_DOMAIN=casedigestai.com
+readonly COVER_NAME=status.casedigestai.com
+readonly COVER_PAGE_TEXT='CaseDigest AI'
+readonly COVER_CERT=/etc/letsencrypt/live/$COVER_DOMAIN/fullchain.pem
 
 fails=0
 pass() { printf 'PASS  %-18s %s\n' "$1" "$2"; }
@@ -208,15 +213,36 @@ check R-vpn-server-14.a "the client link is named 'กรุงเทพฯ clou
     python3 -I -c 'import sys, urllib.parse; sys.exit(0 if urllib.parse.unquote(urllib.parse.urlsplit(open(sys.argv[1]).read().strip()).fragment) == sys.argv[2] else 1)' \
     "$LINK_FILE" 'กรุงเทพฯ cloud.z.com'
 
-# R-vpn-server-04.a (inside half): a TLS client without the key gets the cover site's certificate.
-subject=$(echo | timeout 15 openssl s_client -connect "127.0.0.1:$VPN_PORT" \
-    -servername "$(jq -r '.inbounds[] | select(.port == 443) | .streamSettings.realitySettings.serverNames[0]' "$XRAY_CONFIG")" \
-    -verify_return_error 2>/dev/null | openssl x509 -noout -subject 2>/dev/null)
-[ -n "$subject" ] \
-    && pass R-vpn-server-04.a "unauthenticated TLS client is shown a valid third-party certificate" \
-    || fail R-vpn-server-04.a "unauthenticated TLS client did not get a valid certificate"
+# R-vpn-server-14.c: the name clients send is the cover name.
+check R-vpn-server-14.c "the client link sends the server name $COVER_NAME" \
+    python3 -I -c 'import sys, urllib.parse; sys.exit(0 if dict(urllib.parse.parse_qsl(urllib.parse.urlsplit(open(sys.argv[1]).read().strip()).query)).get("sni") == sys.argv[2] else 1)' \
+    "$LINK_FILE" "$COVER_NAME"
 
-# R-vpn-server-05.a: nothing but SSH and the VPN port listens on a public address.
+# R-vpn-server-04.a (inside half): a TLS client without the key gets the cover
+# site: a certificate that validates for the cover name, and the landing page.
+probe=$(curl -s --max-time 15 --resolve "$COVER_NAME:$VPN_PORT:127.0.0.1" "https://$COVER_NAME/")
+printf '%s' "$probe" | grep -qF "$COVER_PAGE_TEXT" \
+    && pass R-vpn-server-04.a "client without the key gets a valid certificate for $COVER_NAME and the landing page" \
+    || fail R-vpn-server-04.a "client without the key did not get the landing page with a valid certificate"
+
+# R-vpn-server-04.b (inside half): the bare domain, and a client that sends no
+# name at all, get the same site's certificate instead of a reset.
+bare=$(curl -s --max-time 15 --resolve "$COVER_DOMAIN:$VPN_PORT:127.0.0.1" "https://$COVER_DOMAIN/")
+noname=$(echo | timeout 15 openssl s_client -connect "127.0.0.1:$VPN_PORT" -noservername 2>/dev/null \
+    | openssl x509 -noout -checkhost "$COVER_NAME" 2>/dev/null)
+if printf '%s' "$bare" | grep -qF "$COVER_PAGE_TEXT" && printf '%s' "$noname" | grep -q 'does match'; then
+    pass R-vpn-server-04.b "the bare domain and a client with no server name get the site's certificate"
+else
+    fail R-vpn-server-04.b "the bare domain or a client with no server name did not get the site's certificate"
+fi
+
+# R-vpn-server-04.c: a handshake without the key is handed to a web server on
+# this host, so answering a probe opens no connection to another host.
+check R-vpn-server-04.c "connections without the key go to a web server on loopback" \
+    jq -e --argjson p "$VPN_PORT" '.inbounds[] | select(.port == $p) | .streamSettings.realitySettings
+        | (.target // .dest) | startswith("127.0.0.1:")' "$XRAY_CONFIG"
+
+# R-vpn-server-05.a: nothing but SSH, port 80 and the VPN port listens on a public address.
 # The one exception is the UDP socket Xray holds open for its WARP tunnel: it is
 # the tunnel's own sending socket, on a port the firewall does not admit (05.c).
 tcp_listeners=$(ss -Htlnp | awk '{print $4 " " $6}' | grep -Ev '^(127\.|\[::1\]|\[::ffff:127\.)' \
@@ -224,23 +250,55 @@ tcp_listeners=$(ss -Htlnp | awk '{print $4 " " $6}' | grep -Ev '^(127\.|\[::1\]|
 udp_other=$(ss -Hulnp | awk '{print $4 " " $6}' | grep -Ev '^(127\.|\[::1\]|\[::ffff:127\.)' \
     | grep -v '"xray-' | sed -E 's/^[^ ]*:([0-9]+) .*/\1/' | sort -un | tr '\n' ' ')
 ssh_port=$(sshd -T 2>/dev/null | awk '$1 == "port" {print $2}')
-expected=$(printf '%s\n%s\n' "$ssh_port" "$VPN_PORT" | sort -un | tr '\n' ' ')
+expected=$(printf '%s\n80\n%s\n' "$ssh_port" "$VPN_PORT" | sort -un | tr '\n' ' ')
 if [ "$tcp_listeners" = "$expected" ] && [ -z "$udp_other" ]; then
-    pass R-vpn-server-05.a "public listeners are only SSH and ${VPN_PORT}, plus the WARP tunnel's own UDP socket"
+    pass R-vpn-server-05.a "public listeners are only SSH, 80 and ${VPN_PORT}, plus the WARP tunnel's own UDP socket"
 else
     fail R-vpn-server-05.a "public listeners are: tcp ${tcp_listeners:-none}; udp not owned by the proxy: ${udp_other:-none}"
 fi
 
-# R-vpn-server-05.c: the firewall admits only SSH and the VPN port.
+# R-vpn-server-05.c: the firewall admits only SSH, port 80 and the VPN port.
 rules=$(ufw status | awk '/ALLOW/ {print $1}' | sort -u | tr '\n' ' ')
-[ "$rules" = "$(printf '%s/tcp\n%s/tcp\n' "$ssh_port" "$VPN_PORT" | sort -u | tr '\n' ' ')" ] \
+[ "$rules" = "$(printf '%s/tcp\n80/tcp\n%s/tcp\n' "$ssh_port" "$VPN_PORT" | sort -u | tr '\n' ' ')" ] \
     && ufw status verbose | grep -q 'deny (incoming)' \
-    && pass R-vpn-server-05.c "ufw denies incoming except SSH and ${VPN_PORT}/tcp" \
+    && pass R-vpn-server-05.c "ufw denies incoming except SSH, 80/tcp and ${VPN_PORT}/tcp" \
     || fail R-vpn-server-05.c "ufw rules are: $rules"
 
 # R-vpn-server-06.a: the server keeps no record of client connections.
 check R-vpn-server-06.a "Xray access log and DNS log are off" \
     jq -e '.log.access == "none" and .log.dnsLog == false' "$XRAY_CONFIG"
+
+# R-vpn-server-06.b: no record of who visited the site. Every access_log line
+# in nginx's full configuration is "off", and the site container has no log.
+nginx_conf=$(nginx -T 2>/dev/null)
+site_container=$(docker compose --project-directory /opt/cover-site ps -q site 2>/dev/null)
+site_logs=$(docker inspect -f '{{.HostConfig.LogConfig.Type}}' "${site_container:-none}" 2>/dev/null)
+if [ -n "$nginx_conf" ] \
+    && ! printf '%s\n' "$nginx_conf" | grep -E '^[[:space:]]*access_log[[:space:]]' | grep -qv 'access_log off;' \
+    && [ "$site_logs" = none ] \
+    && ! docker exec "$site_container" nginx -T 2>/dev/null | grep -E '^[[:space:]]*access_log[[:space:]]' | grep -qv 'access_log off;'; then
+    pass R-vpn-server-06.b "the web server and the site container write no access log"
+else
+    fail R-vpn-server-06.b "the web server or the site container can write an access log (container log driver: ${site_logs:-unknown})"
+fi
+
+# R-vpn-server-16.a: the certificate renews without an operator.
+check R-vpn-server-16.a "the certificate renewal timer is enabled and active" \
+    sh -c 'systemctl is-enabled --quiet certbot.timer && systemctl is-active --quiet certbot.timer'
+
+# R-vpn-server-16.b: a renewal rehearsed against Let's Encrypt's staging service succeeds.
+check R-vpn-server-16.b "a rehearsed certificate renewal succeeds" \
+    certbot renew --dry-run --no-random-sleep-on-renew --cert-name "$COVER_DOMAIN"
+
+# R-vpn-server-16.c: the certificate the site serves is valid for more than 20 days.
+served_cert=$(echo | timeout 15 openssl s_client -connect "127.0.0.1:$VPN_PORT" -servername "$COVER_NAME" 2>/dev/null \
+    | openssl x509 2>/dev/null)
+if [ -n "$served_cert" ] && printf '%s\n' "$served_cert" | openssl x509 -noout -checkend 1728000 >/dev/null \
+    && [ "$(printf '%s\n' "$served_cert" | openssl x509 -noout -fingerprint -sha256)" = "$(openssl x509 -in "$COVER_CERT" -noout -fingerprint -sha256 2>/dev/null)" ]; then
+    pass R-vpn-server-16.c "the served certificate is the renewed one and is valid for more than 20 days"
+else
+    fail R-vpn-server-16.c "the served certificate expires within 20 days or is not the one certbot holds"
+fi
 
 # R-vpn-server-07.a: security updates install without an operator.
 # The dump is captured first: with pipefail, grep -q closing the pipe early fails the pipeline.

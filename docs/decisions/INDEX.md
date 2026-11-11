@@ -32,4 +32,4 @@ One row per decision record in this folder. Files are named `ADR-NNNN-<slug>.md`
 | [ADR-0009](ADR-0009-warp-endpoint-in-bangkok.md) | WARP endpoint answered in Bangkok | accepted | 2026-11-10 |
 | [ADR-0010](ADR-0010-subscription-through-tunnel.md) | Subscription served through the tunnel | superseded by ADR-0011 | 2026-11-11 |
 | [ADR-0011](ADR-0011-no-subscription-name-in-the-link.md) | No subscription; the profile name travels in the client link | accepted | 2026-11-11 |
-| [ADR-0012](ADR-0012-own-domain-cover-site.md) | Cover site on the owner's own domain, served from the VPS | proposed | 2026-11-12 |
+| [ADR-0012](ADR-0012-own-domain-cover-site.md) | Cover site on the owner's own domain, served from the VPS | accepted, not deployed yet | 2026-11-12 |
