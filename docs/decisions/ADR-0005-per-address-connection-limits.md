@@ -1,6 +1,6 @@
 # ADR-0005: Per-address connection limits in ufw's before-input chain
 
-- Status: accepted
+- Status: accepted; the limits on port 443 superseded by ADR-0013
 - Date: 2026-11-10
 - Supersedes: none
 - Change: `changes/archive/2026-11-10-harden-against-attacks/`
