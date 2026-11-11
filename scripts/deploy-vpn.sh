@@ -602,6 +602,10 @@ server {
     location / {
         proxy_pass http://127.0.0.1:$COVER_SITE_PORT;
         proxy_set_header Host \$host;
+        # Cloudflare injects its bot-detection script into HTML unless the
+        # response forbids changes; the free plan has no switch for it
+        # (R-vpn-server-15.c).
+        add_header Cache-Control "no-transform" always;
     }
 }
 EOF

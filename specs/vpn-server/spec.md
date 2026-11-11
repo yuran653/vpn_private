@@ -150,7 +150,7 @@ The server is the website of `casedigestai.com` and `status.casedigestai.com`, p
   Test: `scripts/verify-external.sh` (R-vpn-server-15.a)
 - **R-vpn-server-15.b** [verified] WHEN a browser opens `https://casedigestai.com` or `https://status.casedigestai.com` THEN it receives a publicly trusted certificate that names that host and a page containing "CaseDigest AI".
   Test: `scripts/verify-external.sh` (R-vpn-server-15.b)
-- **R-vpn-server-15.c** [drift: Cloudflare's "JavaScript Detections" injects a script that loads /cdn-cgi/challenge-platform/ into the page; turning it off in the Cloudflare dashboard is pending with the owner] WHEN the landing page and everything it loads are inspected THEN no URL points to another host, and the page has no form and no script.
+- **R-vpn-server-15.c** [verified] WHEN the landing page and everything it loads are inspected THEN no URL points to another host, and the page has no form and no script.
   Test: `scripts/verify-external.sh` (R-vpn-server-15.c)
 - **R-vpn-server-15.d** [verified] WHEN the landing page is read THEN it mentions neither a VPN nor Thailand.
   Test: `scripts/verify-external.sh` (R-vpn-server-15.d)
