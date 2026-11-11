@@ -141,12 +141,27 @@ td.hidden { color: var(--muted); }
 .op p { font-size: 0.94rem; color: var(--muted); }
 .term { background: var(--ink); color: var(--bg); font: 400 0.82rem/1.55 var(--mono); border-radius: 8px; padding: 12px 14px; overflow-x: auto; white-space: pre; }
 
+/* Google location */
+.why { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 32px; align-items: start; }
+.chain { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; counter-reset: why; }
+.chain li { counter-increment: why; display: grid; grid-template-columns: 40px minmax(0, 1fr); column-gap: 14px; row-gap: 6px; padding: 18px 0; border-top: 1px solid var(--line); }
+.chain li:first-child { border-top: 0; padding-top: 0; }
+.chain li::before { content: counter(why); grid-row: span 2; width: 32px; height: 32px; border-radius: 50%; border: 2px solid var(--gold); color: var(--gold); font: 700 0.95rem/28px var(--display); text-align: center; }
+.chain p { font-size: 0.94rem; color: var(--muted); }
+.side { display: grid; gap: 16px; min-width: 0; }
+.trace-card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px; display: grid; gap: 12px; }
+.trace-card .k { font: 500 0.75rem/1 var(--mono); color: var(--gold); letter-spacing: 0.08em; text-transform: uppercase; }
+.trace-card p { font-size: 0.88rem; color: var(--muted); }
+.term .c { color: var(--muted); }
+.caveat { border-left: 3px solid var(--cf); padding: 4px 0 4px 16px; display: grid; gap: 6px; }
+.caveat p { font-size: 0.9rem; color: var(--muted); }
+
 footer { padding-block: 32px 48px; color: var(--muted); font-size: 0.86rem; border-top: 1px solid var(--line); }
 
 @media (max-width: 900px) {
   .steps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .guards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .split { grid-template-columns: minmax(0, 1fr); }
+  .split, .why { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 600px) {
   .slide { padding-block: 40px; }
@@ -274,9 +289,46 @@ a:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
     </div>
   </section>
 
+  <section class="slide" aria-labelledby="s-google">
+    <div class="head">
+      <div class="eyebrow"><span class="n">03</span><span>Location</span></div>
+      <h2 id="s-google">Why Google's AI says you are in Bangkok</h2>
+      <p class="lede">Gemini and other Google services guess where you are from the IP address that reaches them. Through this VPN, that address always belongs to Cloudflare WARP in Thailand.</p>
+    </div>
+    <div class="why">
+      <ol class="chain">
+        <li>
+          <h3>Google sees one address, and it is not yours</h3>
+          <p>Every request leaves the VPS through the <code>warp</code> outbound, and there is no other way out. DNS goes the same way, and IPv6 is blocked. So Google sees neither your home address nor the VPS address, only the WARP address.</p>
+        </li>
+        <li>
+          <h3>That address is Cloudflare's, in Thailand</h3>
+          <p>The WireGuard tunnel enters Cloudflare at its Bangkok site, 1.4 ms from the VPS. Cloudflare places the exit address in Thailand (<code>loc=TH</code>). Geo‑IP databases, Google's included, put that address in Thailand at city level, which means Bangkok. That is the location Gemini shows as "based on your IP address".</p>
+        </li>
+        <li>
+          <h3>The VPS's own address would say Myanmar</h3>
+          <p>Google places the server's own address in Myanmar. Before WARP, YouTube Music said "not available in this country". Because the server has no direct outbound, Google never sees that address, even when WARP is down. Requests fail instead.</p>
+        </li>
+      </ol>
+      <aside class="side">
+        <div class="trace-card">
+          <span class="k">Cloudflare's report, through the tunnel</span>
+          <div class="term">warp=on    <span class="c"># R-vpn-server-12.a</span>
+loc=TH     <span class="c"># R-vpn-server-12.b</span>
+colo=BKK   <span class="c"># R-vpn-server-12.f</span></div>
+          <p><span class="mono">scripts/verify-vpn.sh</span> fetches <span class="mono">/cdn-cgi/trace</span> through the tunnel and fails if any of these lines changes. It also checks that YouTube Music opens.</p>
+        </div>
+        <div class="caveat">
+          <h3>What the server cannot control</h3>
+          <p>Google can also use signals from your device and account. If the phone shares precise location with Google, or your account's home country or the browser's time zone say otherwise, Google can show a different place. The VPN only decides which IP address Google sees.</p>
+        </div>
+      </aside>
+    </div>
+  </section>
+
   <section class="slide" aria-labelledby="s-who">
     <div class="head">
-      <div class="eyebrow"><span class="n">03</span><span>Exposure</span></div>
+      <div class="eyebrow"><span class="n">04</span><span>Exposure</span></div>
       <h2 id="s-who">Who sees what</h2>
       <p class="lede">No single party sees both who you are and where you go, except you.</p>
     </div>
@@ -309,7 +361,7 @@ a:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
 
   <section class="slide" aria-labelledby="s-leaks">
     <div class="head">
-      <div class="eyebrow"><span class="n">04</span><span>Leak guards</span></div>
+      <div class="eyebrow"><span class="n">05</span><span>Leak guards</span></div>
       <h2 id="s-leaks">Each way you could be exposed, and what closes it</h2>
     </div>
     <div class="guards">
@@ -354,7 +406,7 @@ a:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
 
   <section class="slide" aria-labelledby="s-host">
     <div class="head">
-      <div class="eyebrow"><span class="n">05</span><span>The host</span></div>
+      <div class="eyebrow"><span class="n">06</span><span>The host</span></div>
       <h2 id="s-host">A small, closed, self‑patching box</h2>
     </div>
     <div class="split">
@@ -375,7 +427,7 @@ a:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
 
   <section class="slide" aria-labelledby="s-ops">
     <div class="head">
-      <div class="eyebrow"><span class="n">06</span><span>Operating it</span></div>
+      <div class="eyebrow"><span class="n">07</span><span>Operating it</span></div>
       <h2 id="s-ops">Deploy, verify, repeat</h2>
     </div>
     <div class="ops">
