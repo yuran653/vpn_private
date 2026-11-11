@@ -462,14 +462,20 @@ chmod -R a+rX "$COVER_DIR"
 docker compose --project-directory "$COVER_DIR" up -d --quiet-pull >/dev/null 2>"$work/compose.err" \
     || die "the site container did not start: $(tail -n 3 "$work/compose.err")"
 docker compose --project-directory "$COVER_DIR" exec -T site nginx -s reload >/dev/null 2>&1 || true
-site_up=""
-for _ in $(seq 1 20); do
-    if curl -fsS --max-time 5 "http://127.0.0.1:$COVER_SITE_PORT/" 2>/dev/null | grep -qF "$COVER_PAGE_TEXT"; then
-        site_up=yes; break
-    fi
-    sleep 1
-done
-[ -n "$site_up" ] || die "the site container does not serve the landing page on loopback"
+# Waits until a URL returns the landing page. The page is captured first: with
+# pipefail, grep -q closing the pipe early would fail the pipeline. A reload of
+# nginx returns before the new listener is up, hence the retries.
+serves_page() { # serves_page <curl args...>
+    local body _
+    for _ in $(seq 1 20); do
+        body=$(curl -fsS --max-time 5 "$@" 2>/dev/null) || body=""
+        case "$body" in *"$COVER_PAGE_TEXT"*) return 0 ;; esac
+        sleep 1
+    done
+    return 1
+}
+serves_page "http://127.0.0.1:$COVER_SITE_PORT/" \
+    || die "the site container does not serve the landing page on loopback"
 if ss -Htln "sport = :$COVER_SITE_PORT" | awk '{print $4}' | grep -qv '^127\.'; then
     die "the site container listens on a public address"
 fi
@@ -570,8 +576,7 @@ systemctl enable --now certbot.timer >/dev/null 2>&1
 # The site must answer over TLS on loopback, with a certificate that validates
 # for each name, before any probe is sent to it.
 for name in "$COVER_DOMAIN" "$COVER_NAME"; do
-    curl -fsS --max-time 10 --http2 --resolve "$name:$COVER_TLS_PORT:127.0.0.1" "https://$name:$COVER_TLS_PORT/" 2>/dev/null \
-        | grep -qF "$COVER_PAGE_TEXT" \
+    serves_page --http2 --resolve "$name:$COVER_TLS_PORT:127.0.0.1" "https://$name:$COVER_TLS_PORT/" \
         || die "the cover site does not answer for $name on loopback (the tunnel is unchanged)"
 done
 log "cover site answers for both names on loopback"
