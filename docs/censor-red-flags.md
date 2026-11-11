@@ -34,11 +34,32 @@ Each flag is a finding, not a fix. A fix is its own change with a decision recor
 - **DNS and IPv6:** DNS leaks and IPv6 egress are closed on the server (`specs/vpn-server/spec.md`).
 - **Panel:** 3x-ui listens on loopback only and can't be found from outside.
 
+## Incident: the IP was blocked after a domain was linked (2026-11-12)
+
+A user could not connect. The server itself was healthy; its address was no longer reachable from the user's ISP.
+
+| What | Finding |
+|---|---|
+| When | 2026-11-12, right after a domain was linked to the server IP. |
+| Symptom | `ping`, SSH (22) and HTTPS (443) to the server IP time out from the user's network and from the owner's Mac. |
+| Server | Up, with enough memory and disk. `ssh`, `x-ui`, `fail2ban` and `ufw` active, 22 and 443 listening, VPS network fine (it reaches `1.1.1.1`). A packet capture showed the server answering other clients on 443 and 22. |
+| Rules out | A server fault, a firewall rule or ban on the server (only one unrelated address was banned by `fail2ban`), and a ufw limit. The owner's manual restart did not change anything. |
+| Cause | The ISP block of the server IP. Not proven: the capture of the owner's own packets and a test from a second network were not done. The timing points at the domain link (flag 1: a name now ties the Thai hosting IP to a hostname that DNS and certificates expose). |
+| Recovery | A new IP from Z.com, then a re-run of `deploy-vpn.sh` to rewrite the client link (`docs/vps-access.md`, "What the server does not defend against"). |
+
+[TODO-CLARIFY: which ISP and country blocked the IP, and was the domain used in the client link, in DNS only, or on a certificate?]
+
+Lessons:
+
+- Do not link a domain to the VPS IP without a decision record. A name next to the IP adds to flag 1.
+- The "cover name that matches the IP" option below has the same risk. Test it on a spare IP first.
+- With one IP and one transport (flag 6) a block cuts every user off at once, so spare IPs are not optional.
+
 ## Where fixes would start
 
 Fixing flags 1, 2, 5 and 6 would cover most of the risk. Options mentioned so far, none decided:
 
-- A cover name that matches the IP: an owned domain with a real certificate on the VPS.
+- A cover name that matches the IP: an owned domain with a real certificate on the VPS. The 2026-11-12 incident followed a domain link, so treat this with care.
 - Traffic through a CDN (VLESS over XHTTP or WebSocket behind Cloudflare), which hides the VPS IP.
 - SSH reachable only from known addresses, or only through a hidden path.
 - A second transport and spare IPs, so one block doesn't cut everyone off.
