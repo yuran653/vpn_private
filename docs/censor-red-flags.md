@@ -1,6 +1,6 @@
 # Red flags for censors
 
-What the deployed server gives away to the censors in China (GFW), Iran and Russia (TSPU). Checked against `scripts/deploy-vpn.sh` and `scripts/harden-vps.sh` on 2026-11-11. Flags 1, 7 and 10 were fixed on 2026-11-12 by serving the owner's own site as the cover site (ADR-0012); the other flags stand.
+What the deployed server gives away to the censors in China (GFW), Iran and Russia (TSPU). Checked against `scripts/deploy-vpn.sh` and `scripts/harden-vps.sh` on 2026-11-11. Flags 1, 7 and 10 were fixed on 2026-11-12 by serving the owner's own site as the cover site (ADR-0012). Flag 2 was fixed by routing every client through Cloudflare (ADR-0013); that also weakens flags 3, 4 and 9. The other flags stand.
 
 Goal, as stated by the owner on 2026-11-11: a robust, stable and safe VPN for users in China, Iran and Russia. This is wider than the personal Thai VPS that `AGENTS.md` describes, and the server has one client (`owner`) today.
 
@@ -12,20 +12,20 @@ Each flag is a finding, not a fix. A fix is its own change with a decision recor
 
 | # | Flag | What the censor sees | Who checks it |
 |---|---|---|---|
-| 1 | ~~The name and the IP don't match~~ **Fixed 2026-11-12** | Was: the TLS hello named `www.samsung.com` on a Thai hosting IP. Now the hello names `status.casedigestai.com`, which resolves to this IP and has its own certificate (ADR-0012). The name ties the owner's domain to the IP; see the incident below. | CN, RU, IR |
-| 2 | The IP is in a datacenter | Home users sending gigabytes to a hosting provider's IP block: the basic proxy pattern. Russia is reported to throttle TLS to foreign hosting networks after the first few kilobytes. | RU, CN |
-| 3 | One IP, heavy traffic, long sessions | Each user holds connections for hours and moves gigabytes to one "website". | CN, RU |
-| 4 | Many users on one IP | Once there are several users, many unrelated home addresses in one country all connect to the same VPS. That marks a proxy without looking inside the traffic. | CN, RU, IR |
+| 1 | ~~The name and the IP don't match~~ **Fixed 2026-11-12** | Was: the TLS hello named `www.samsung.com` on a Thai hosting IP. Then the hello named `status.casedigestai.com`, which resolved to this IP (ADR-0012). Now the same name resolves to Cloudflare, which is where the client connects (ADR-0013). | CN, RU, IR |
+| 2 | ~~The IP is in a datacenter~~ **Fixed 2026-11-12** | Was: home users sending gigabytes to a hosting provider's IP block, the basic proxy pattern. Now clients connect only to Cloudflare addresses, which serve millions of ordinary sites; the server's own address answers nobody but Cloudflare on 80 and 443 (ADR-0013). New risk instead: Russia is reported to throttle Cloudflare since 2025, and the free plan has no nodes in China. | RU, CN |
+| 3 | One IP, heavy traffic, long sessions | Each user holds connections for hours and moves gigabytes to one "website". Weaker since ADR-0013: the address is Cloudflare's, shared with many sites, but one hostname still carries all of a user's traffic. | CN, RU |
+| 4 | Many users on one IP | Once there are several users, many unrelated home addresses in one country all connect to the same VPS. That marks a proxy without looking inside the traffic. Weaker since ADR-0013: they connect to Cloudflare addresses, but they all name one hostname. | CN, RU, IR |
 | 5 | SSH is open on the same IP | `harden-vps.sh` allows the SSH port to everyone. The OpenSSH banner shows the Ubuntu version, so a probe sees a Linux VPS next to the website. | CN (active probing) |
 
 ## Medium: makes detection easier
 
 | # | Flag | What the censor sees | Who checks it |
 |---|---|---|---|
-| 6 | Only one transport, with no fallback | Reality over TCP 443 is the only way in. Once the IP or protocol is blocked, every user is cut off at once. Iran's protocol whitelisting and Russia's whitelist mode during shutdowns block it outright. | CN, RU, IR |
+| 6 | Only one transport, with no fallback | XHTTP through Cloudflare is the only way in (ADR-0013); before, it was Reality over TCP 443. Once the IP or protocol is blocked, every user is cut off at once. Iran's protocol whitelisting and Russia's whitelist mode during shutdowns block it outright. | CN, RU, IR |
 | 7 | ~~Probe timing gives the relay away~~ **Fixed 2026-11-12** | Was: a probe without the key was relayed to the real samsung.com, a round trip away. Now the server answers the probe itself, from a web server on the same host (ADR-0012). | CN |
 | 8 | The fingerprint may not match the device | The client link always sets `fp=chrome`, even from an iPhone, where real browsers send Safari's hello. And uTLS's Chrome fingerprint can fall behind the current Chrome release. | CN |
-| 9 | No HTTP/3 | Many sites also answer over QUIC/HTTP/3. This server only answers TLS over TCP. A weaker signal now that the cover site is a small self-hosted one, which often has no HTTP/3. | CN |
+| 9 | No HTTP/3 | Was: the server answered TLS over TCP only. Cloudflare's edge now answers the site names over HTTP/3 too, for browsers; the tunnel itself still uses HTTP/2. | CN |
 | 10 | ~~The cover site doesn't fit Chinese users~~ **Fixed 2026-11-12** | Was: samsung.com reached through a Thai IP, while China serves it from local CDN nodes. Now the name is a small site that is hosted only on this IP (ADR-0012). | CN |
 
 ## Not a flag on the wire (already handled)
@@ -57,8 +57,7 @@ Lessons:
 
 ## Where fixes would start
 
-Flag 1 is fixed (ADR-0012). Fixing flags 2, 5 and 6 would cover most of the remaining risk. Options mentioned so far, none decided:
-- Traffic through a CDN (VLESS over XHTTP or WebSocket behind Cloudflare), which hides the VPS IP.
+Flags 1 and 2 are fixed (ADR-0012, ADR-0013). Fixing flags 5 and 6 would cover most of the remaining risk. Options mentioned so far, none decided:
 - SSH reachable only from known addresses, or only through a hidden path.
 - A second transport and spare IPs, so one block doesn't cut everyone off.
 

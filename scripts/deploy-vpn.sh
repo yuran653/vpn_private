@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# deploy-vpn.sh - VLESS + XTLS-Reality server on the Thailand VPS (Ubuntu 22.04/24.04).
+# deploy-vpn.sh - VLESS over XHTTP behind Cloudflare, on the Thailand VPS (Ubuntu 22.04/24.04).
 #
 # Installs the 3x-ui panel (pinned release), binds it to loopback, and configures
 # Xray through the panel API:
@@ -13,25 +13,29 @@
 #   5. Xray template: all client traffic out through Cloudflare WARP (the server
 #      is registered once as a free WARP device, ADR-0008), encrypted DNS,
 #      IPv4-only egress, port-53 capture, no access log
-#   6. the cover site (ADR-0012): the owner's own website on this host. nginx
-#      answers on 80/tcp and, with a Let's Encrypt certificate, on loopback;
-#      the pages come from a Docker container published on loopback only
-#   7. one VLESS + Reality + Vision inbound on 443/tcp with one client; a
-#      connection without the client key is handed to the cover site
-#   8. ufw: 80/tcp and 443/tcp allowed, with per-address limits on new
-#      connections to 443 (ADR-0005)
-#   9. the client link written to /root/vpn/vless-link.txt (mode 600)
+#   6. the cover site (ADR-0012), published through Cloudflare (ADR-0013): the
+#      owner's own website. nginx answers on 80/tcp and, with a Let's Encrypt
+#      certificate, on 443/tcp; the pages come from a Docker container
+#      published on loopback only. One random path on 443 is the tunnel
+#   7. one VLESS + XHTTP inbound on loopback with one client, behind nginx; the
+#      VLESS + Reality inbound that held 443 before is removed (cut-over)
+#   8. ufw: 80/tcp and 443/tcp admitted from Cloudflare's IPv4 ranges only
+#   9. the client link written to /root/vpn/vless-link.txt (mode 600); it
+#      names status.casedigestai.com, not the server's address
 #
 # Usage, on the VPS as root or via sudo, with the repo's site/ folder next to
 # this script (or its path in SITE_SRC):
 #   sudo -n bash deploy-vpn.sh
 #
 # Run scripts/harden-vps.sh first: this script expects ufw to be active.
-# The A records of both cover names must point at this host before the first
-# run; the script checks them and stops before it changes the tunnel if not.
+# Both cover names must be proxied by Cloudflare (orange cloud, SSL mode
+# "Full (strict)") before the run; the script checks that they resolve to
+# Cloudflare only and stops before it changes the tunnel if not.
 #
 # Safe to re-run. Keys, the client ID and panel credentials are generated once
 # and kept; a re-run reapplies the settings and leaves the client link unchanged.
+# The first run after ADR-0013 replaces the Reality link: every device imports
+# the new one.
 # The Xray template is owned by this script: edits made to it in the panel are
 # overwritten on the next run.
 #
@@ -48,14 +52,17 @@ readonly XUI_BIN=/usr/local/x-ui/x-ui
 readonly XUI_RESULT=/etc/x-ui/install-result.env
 
 readonly VPN_PORT=443
-# Cover site (ADR-0012). Clients send COVER_NAME as the TLS server name. Both
-# names resolve to this host and are on one certificate. Xray hands a handshake
-# without the client key to nginx on COVER_TLS_PORT; nginx takes the pages from
-# the site container on COVER_SITE_PORT. Both ports are on loopback only.
+# Cover site (ADR-0012) behind Cloudflare (ADR-0013). Clients connect to
+# COVER_NAME, which Cloudflare proxies to nginx on VPN_PORT. Both names are on
+# one Let's Encrypt certificate. nginx takes the pages from the site container
+# on COVER_SITE_PORT and hands the tunnel path to Xray on XHTTP_PORT. Before
+# the cut-over nginx's TLS side waits on STAGING_TLS_PORT. All three are on
+# loopback only.
 readonly COVER_DOMAIN=casedigestai.com
 readonly COVER_NAME=status.casedigestai.com
-readonly COVER_TLS_PORT=8443
+readonly STAGING_TLS_PORT=8443
 readonly COVER_SITE_PORT=8080
+readonly XHTTP_PORT=10443
 readonly COVER_DIR=/opt/cover-site
 readonly COVER_NGINX_CONF=/etc/nginx/conf.d/cover-site.conf
 readonly COVER_CERT_DIR=/etc/letsencrypt/live/$COVER_DOMAIN
@@ -68,6 +75,11 @@ readonly CLIENT_EMAIL=owner
 
 readonly STATE_DIR=/root/vpn
 readonly LINK_FILE=$STATE_DIR/vless-link.txt
+readonly XHTTP_PATH_FILE=$STATE_DIR/xhttp-path
+# Cloudflare's published IPv4 ranges; only they reach 80 and 443 (ADR-0013).
+readonly CF_IPS_URL=https://www.cloudflare.com/ips-v4
+readonly CF_IPS_FILE=$STATE_DIR/cloudflare-ips-v4.txt
+readonly CF_RULE_COMMENT=cloudflare
 readonly INSTALL_LOG=$STATE_DIR/install.log
 # Cloudflare WARP (ADR-0008). The registration is made once and kept in
 # WARP_FILE. The endpoint is an address literal, so reaching WARP needs no
@@ -91,14 +103,9 @@ readonly TCP_MODULES_CONF=/etc/modules-load.d/vpn-tcp.conf
 # a buffer towards it only while the connection needs it (ADR-0007).
 readonly TCP_BUFFER_MAX=16777216
 readonly UFW_BEFORE=/etc/ufw/before.rules
+# The per-address limits on the VPN port (ADR-0005) are removed by this marker:
+# every client now arrives from a shared Cloudflare address (ADR-0013).
 readonly LIMITS_MARKER='vpn-server port limits'
-# One address may hold this many connections to the VPN port at once, and open
-# this many new ones per second. Every stream a client opens through the tunnel
-# is its own connection to this port, so the numbers sit far above normal use,
-# including several devices behind one home address (ADR-0005).
-readonly VPN_MAX_CONCURRENT=1000
-readonly VPN_MAX_NEW_PER_SECOND=100
-readonly VPN_NEW_BURST=300
 
 log() { printf '[deploy] %s\n' "$*"; }
 die() { printf '[deploy] error: %s\n' "$*" >&2; exit 1; }
@@ -412,13 +419,14 @@ api_ok "save template" panel/api/xray/update -X POST \
     --data-urlencode "xraySetting@$work/template.json" >/dev/null
 log "xray template applied"
 
-# 6. Cover site (ADR-0012). The website of COVER_DOMAIN and COVER_NAME runs on
-#    this host, so the name, the address, the certificate and the page agree,
-#    and a probe is answered here instead of being relayed to a third party.
-#    Everything in this step is in place and tested before the inbound is
-#    pointed at it: a failure here leaves the tunnel as it was.
+
+# 6. Cover site (ADR-0012), published through Cloudflare (ADR-0013). The
+#    website of COVER_DOMAIN and COVER_NAME runs on this host; Cloudflare
+#    proxies both names, and nginx on 443 hands the tunnel path to Xray.
+#    Everything in this step is in place and tested before the cut-over in
+#    step 7: a failure here leaves the tunnel as it was.
 case "$XUI_PANEL_PORT" in
-    "$COVER_TLS_PORT"|"$COVER_SITE_PORT") die "the panel port collides with a cover site port" ;;
+    "$STAGING_TLS_PORT"|"$COVER_SITE_PORT"|"$XHTTP_PORT") die "the panel port collides with a cover site or tunnel port" ;;
 esac
 public_ip=$(ip -4 route get 1.1.1.1 | awk '{for (i = 1; i < NF; i++) if ($i == "src") print $(i + 1)}')
 printf '%s' "$public_ip" | grep -Eq '^([0-9]{1,3}\.){3}[0-9]{1,3}$' || die "could not read the public IPv4 address"
@@ -481,17 +489,84 @@ if ss -Htln "sport = :$COVER_SITE_PORT" | awk '{print $4}' | grep -qv '^127\.'; 
 fi
 log "site container running on loopback"
 
+# Cloudflare's published IPv4 ranges (ADR-0013). Only these may reach 80 and
+# 443. Fetched on every run; the last good copy is used when the fetch fails.
+if curl -fsS --retry 3 --max-time 20 "$CF_IPS_URL" -o "$work/cf-ips" \
+    && [ "$(grep -Ecx '([0-9]{1,3}\.){3}[0-9]{1,3}/[0-9]{1,2}' "$work/cf-ips")" -ge 5 ] \
+    && ! grep -Evqx '([0-9]{1,3}\.){3}[0-9]{1,3}/[0-9]{1,2}' "$work/cf-ips"; then
+    install -m 600 "$work/cf-ips" "$CF_IPS_FILE"
+elif [ -s "$CF_IPS_FILE" ]; then
+    log "could not fetch Cloudflare's ranges; using the copy from the last run"
+else
+    die "could not fetch Cloudflare's IPv4 ranges from $CF_IPS_URL"
+fi
+mapfile -t cf_ranges < "$CF_IPS_FILE"
+
+# Both names must resolve to Cloudflare only: the domain is on Cloudflare and
+# both records are proxied. Checked before a certificate is requested and
+# before the cut-over, so the tunnel never moves to a name that does not lead
+# through Cloudflare.
+names_on_cloudflare() {
+    local name resolved
+    for name in "$COVER_DOMAIN" "$COVER_NAME"; do
+        resolved=$(getent ahostsv4 "$name" | awk '{print $1}' | sort -u | tr '\n' ' ')
+        [ -n "$resolved" ] || die "$name does not resolve; add it in Cloudflare as a proxied record (the tunnel is unchanged)"
+        # shellcheck disable=SC2086
+        python3 -I - "$CF_IPS_FILE" $resolved <<'PY' \
+            || die "$name resolves to '$resolved', not only to Cloudflare; switch the record to Proxied in Cloudflare and run again (the tunnel is unchanged)"
+import ipaddress, sys
+nets = [ipaddress.ip_network(l.strip()) for l in open(sys.argv[1]) if l.strip()]
+sys.exit(0 if all(any(ipaddress.ip_address(a) in n for n in nets) for a in sys.argv[2:]) else 1)
+PY
+    done
+}
+names_on_cloudflare
+log "both names resolve to Cloudflare only"
+
+# Firewall: 80 and 443 from Cloudflare's ranges. Rules for ranges Cloudflare
+# no longer lists are deleted. The rules that admit everyone are deleted at the
+# cut-over, in step 7.
+for range in "${cf_ranges[@]}"; do
+    for port in 80 "$VPN_PORT"; do
+        ufw allow proto tcp from "$range" to any port "$port" comment "$CF_RULE_COMMENT" >/dev/null
+    done
+done
+ufw status | awk -v c="# $CF_RULE_COMMENT" 'index($0, c) {print $1 " " $3}' | sort -u > "$work/cf-rules"
+while read -r portspec range; do
+    printf '%s\n' "${cf_ranges[@]}" | grep -qxF "$range" && continue
+    ufw delete allow proto tcp from "$range" to any port "${portspec%/tcp}" >/dev/null || true
+done < "$work/cf-rules"
+log "80/tcp and ${VPN_PORT}/tcp admitted from Cloudflare's ${#cf_ranges[@]} ranges"
+
+# The tunnel path: made once, kept in the inbound once that exists. A copy is
+# kept root-only so the web server config can be written before the inbound.
+inbound_id() { # inbound_id <port>
+    api_ok "list inbounds" panel/api/inbounds/list \
+        | jq -r --argjson p "$1" '[.obj[] | select(.port == $p)][0].id // empty'
+}
+xhttp_id=$(inbound_id "$XHTTP_PORT")
+if [ -n "$xhttp_id" ]; then
+    api_ok "read inbound" "panel/api/inbounds/get/$xhttp_id" \
+        | jq -r '.obj.streamSettings | (if type == "string" then fromjson else . end) | .xhttpSettings.path' > "$XHTTP_PATH_FILE"
+elif [ ! -s "$XHTTP_PATH_FILE" ]; then
+    printf '/%s\n' "$(openssl rand -hex 12)" > "$XHTTP_PATH_FILE"
+fi
+chmod 600 "$XHTTP_PATH_FILE"
+xhttp_path=$(cat "$XHTTP_PATH_FILE")
+printf '%s' "$xhttp_path" | grep -Eqx '/[0-9a-f]{24}' || die "the tunnel path in $XHTTP_PATH_FILE is malformed"
+
 # nginx on the host. Port 80 serves the certificate challenge and redirects the
-# rest to HTTPS. The TLS side listens on loopback only and is added once the
-# certificate exists. No access log is kept (R-vpn-server-06.b).
+# rest to HTTPS. The TLS side serves the site and the tunnel path. Until the
+# cut-over it listens on loopback, because Reality still holds 443; after it,
+# it holds 443. No access log is kept (R-vpn-server-06.b).
 rm -f /etc/nginx/sites-enabled/default
 sed -i -E 's|^([[:space:]]*)access_log[[:space:]].*;|\1access_log off;|' /etc/nginx/nginx.conf
 install -d -m 755 "$ACME_ROOT"
 cover_domain_re=${COVER_DOMAIN//./\\.}
 cover_name_re=${COVER_NAME//./\\.}
-write_nginx_conf() { # write_nginx_conf [tls]
+write_nginx_conf() { # write_nginx_conf [<tls listen address>]
     cat > "$work/cover-site.conf" <<EOF
-# Written by deploy-vpn.sh (ADR-0012). Edits are overwritten on the next run.
+# Written by deploy-vpn.sh (ADR-0012, ADR-0013). Edits are overwritten on the next run.
 server {
     listen 80 default_server;
     server_name $COVER_DOMAIN $COVER_NAME;
@@ -503,10 +578,10 @@ server {
     location / { return 301 https://\$cover_host\$request_uri; }
 }
 EOF
-    if [ "${1:-}" = tls ]; then
+    if [ -n "${1:-}" ]; then
         cat >> "$work/cover-site.conf" <<EOF
 server {
-    listen 127.0.0.1:$COVER_TLS_PORT ssl http2 default_server;
+    listen $1 ssl http2 default_server;
     server_name $COVER_DOMAIN $COVER_NAME;
     server_tokens off;
     access_log off;
@@ -514,6 +589,16 @@ server {
     ssl_certificate_key $COVER_CERT_DIR/privkey.pem;
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_session_tickets off;
+    location ^~ /.well-known/acme-challenge/ { root $ACME_ROOT; default_type text/plain; }
+    # The tunnel (ADR-0013): VLESS over XHTTP, to Xray on loopback.
+    location ^~ $xhttp_path {
+        client_max_body_size 0;
+        client_body_timeout 5m;
+        grpc_pass grpc://127.0.0.1:$XHTTP_PORT;
+        grpc_read_timeout 5m;
+        grpc_send_timeout 5m;
+        grpc_socket_keepalive on;
+    }
     location / {
         proxy_pass http://127.0.0.1:$COVER_SITE_PORT;
         proxy_set_header Host \$host;
@@ -542,14 +627,22 @@ cert_covers_names() {
         && openssl x509 -in "$COVER_CERT_DIR/fullchain.pem" -noout -checkhost "$COVER_DOMAIN" | grep -q 'does match' \
         && openssl x509 -in "$COVER_CERT_DIR/fullchain.pem" -noout -checkhost "$COVER_NAME" | grep -q 'does match'
 }
-if cert_covers_names; then write_nginx_conf tls; else write_nginx_conf; fi
-ufw allow 80/tcp comment 'cover site HTTP' >/dev/null
+reality_id=$(api_ok "list inbounds" panel/api/inbounds/list \
+    | jq -r --argjson p "$VPN_PORT" '[.obj[] | select(.port == $p and .protocol == "vless")][0].id // empty')
+# Until Xray lets go of 443, nginx's TLS side waits on loopback. Decided by who
+# holds the port, not by the inbound list: a deleted inbound keeps its port
+# until Xray restarts.
+if [ -n "$reality_id" ] || ss -Htlnp "sport = :$VPN_PORT" | grep -q '"xray'; then
+    tls_port=$STAGING_TLS_PORT; tls_listen=127.0.0.1:$STAGING_TLS_PORT
+else
+    tls_port=$VPN_PORT; tls_listen=$VPN_PORT
+fi
+if cert_covers_names; then write_nginx_conf "$tls_listen"; else write_nginx_conf; fi
 
 # Certificate for both names from Let's Encrypt, by a challenge file served on
-# port 80. Requested only when no valid certificate covers both names. The A
-# records are checked first: a request that cannot succeed counts against Let's
-# Encrypt's limit on failed attempts. Requesting accepts Let's Encrypt's
-# subscriber agreement for the owner; no email address is registered.
+# port 80; Cloudflare passes the challenge through to this host. Requested only
+# when no valid certificate covers both names. Requesting accepts Let's
+# Encrypt's subscriber agreement for the owner; no email address is registered.
 install -d -m 755 /etc/letsencrypt/renewal-hooks/deploy
 cat > /etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh <<'EOF'
 #!/bin/sh
@@ -557,144 +650,139 @@ systemctl reload nginx
 EOF
 chmod 755 /etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh
 if ! cert_covers_names; then
-    for name in "$COVER_DOMAIN" "$COVER_NAME"; do
-        resolved=$(getent ahostsv4 "$name" | awk '{print $1}' | sort -u | tr '\n' ' ')
-        [ "$resolved" = "$public_ip " ] \
-            || die "$name resolves to '${resolved:-nothing}', expected only $public_ip; set its A record and run again (the tunnel is unchanged)"
-    done
     certbot certonly --webroot -w "$ACME_ROOT" --cert-name "$COVER_DOMAIN" \
         -d "$COVER_DOMAIN" -d "$COVER_NAME" --non-interactive --agree-tos \
         --register-unsafely-without-email > "$STATE_DIR/certbot.log" 2>&1 \
         || die "the certificate was not issued; see $STATE_DIR/certbot.log on the VPS (the tunnel is unchanged)"
     cert_covers_names || die "the issued certificate does not cover both names"
-    write_nginx_conf tls
+    write_nginx_conf "$tls_listen"
     log "certificate issued for $COVER_DOMAIN and $COVER_NAME"
 else
     log "certificate for $COVER_DOMAIN and $COVER_NAME is valid; kept"
 fi
 systemctl enable --now certbot.timer >/dev/null 2>&1
 # The site must answer over TLS on loopback, with a certificate that validates
-# for each name, before any probe is sent to it.
+# for each name, before the cut-over.
 for name in "$COVER_DOMAIN" "$COVER_NAME"; do
-    serves_page --http2 --resolve "$name:$COVER_TLS_PORT:127.0.0.1" "https://$name:$COVER_TLS_PORT/" \
+    serves_page --http2 --resolve "$name:$tls_port:127.0.0.1" "https://$name:$tls_port/" \
         || die "the cover site does not answer for $name on loopback (the tunnel is unchanged)"
 done
 log "cover site answers for both names on loopback"
 
-# 7. Inbound. Created once; keys and the client ID are never regenerated.
-inbound_id() {
-    api_ok "list inbounds" panel/api/inbounds/list \
-        | jq -r --argjson p "$VPN_PORT" '[.obj[] | select(.port == $p)][0].id // empty'
-}
-id=$(inbound_id)
-if [ -z "$id" ]; then
-    api_ok "new keypair" panel/api/server/getNewX25519Cert > "$work/keys.json"
-    uuid=$(api_ok "new uuid" panel/api/server/getNewUUID | jq -r '.obj.uuid // .obj')
+# 7. Cut-over (ADR-0013). The Reality inbound on 443 is deleted and the XHTTP
+#    inbound takes its client ID; the inbound as it was is kept, root-only, so
+#    the change can be undone by hand. A client email is unique across the
+#    panel, so the old inbound goes first. Then nginx takes 443 and the rules
+#    that admitted everyone to 80 and 443 go.
+if [ -n "$reality_id" ]; then
+    api_ok "read inbound" "panel/api/inbounds/get/$reality_id" | jq '.obj | del(.clientStats)' > "$work/reality.json"
+    install -m 600 "$work/reality.json" "$STATE_DIR/inbound-previous.json"
+    api_ok "delete Reality inbound" "panel/api/inbounds/del/$reality_id" -X POST >/dev/null
+    log "Reality inbound removed; kept in $STATE_DIR/inbound-previous.json"
+fi
+if [ -z "$xhttp_id" ]; then
+    uuid=""
+    [ -s "$STATE_DIR/inbound-previous.json" ] && uuid=$(jq -r --arg email "$CLIENT_EMAIL" \
+        '.settings | (if type == "string" then fromjson else . end) | .clients[] | select(.email == $email) | .id' \
+        "$STATE_DIR/inbound-previous.json" 2>/dev/null | head -n1)
+    printf '%s' "$uuid" | grep -Eq '^[0-9a-f-]{36}$' \
+        || uuid=$(api_ok "new uuid" panel/api/server/getNewUUID | jq -r '.obj.uuid // .obj')
     printf '%s' "$uuid" | grep -Eq '^[0-9a-f-]{36}$' || die "panel returned no UUID"
-    short_id=$(openssl rand -hex 8)
-    jq -n --arg uuid "$uuid" --arg sid "$short_id" \
-        --arg target "127.0.0.1:$COVER_TLS_PORT" --arg name "$COVER_NAME" \
-        --arg remark "$INBOUND_REMARK" --arg email "$CLIENT_EMAIL" --argjson port "$VPN_PORT" \
-        --slurpfile keys "$work/keys.json" '{
-        enable: true, remark: $remark, listen: "", port: $port, protocol: "vless",
+    # 3x-ui keeps clients in their own table: deleting an inbound leaves its
+    # client behind, and a new inbound may not reuse that email. The leftover
+    # client, attached to no inbound, is deleted; its ID is reused above.
+    if api panel/api/clients/get/"$CLIENT_EMAIL" 2>/dev/null | jq -e '.success == true' >/dev/null; then
+        api_ok "delete leftover client" panel/api/clients/del/"$CLIENT_EMAIL" -X POST >/dev/null
+        log "leftover client '$CLIENT_EMAIL' from the removed inbound deleted"
+    fi
+    jq -n --arg uuid "$uuid" --arg path "$xhttp_path" --arg remark "$INBOUND_REMARK" \
+        --arg email "$CLIENT_EMAIL" --argjson port "$XHTTP_PORT" '{
+        enable: true, remark: $remark, listen: "127.0.0.1", port: $port, protocol: "vless",
         expiryTime: 0, total: 0,
         settings: {
-            clients: [{id: $uuid, email: $email, flow: "xtls-rprx-vision", enable: true,
+            clients: [{id: $uuid, email: $email, flow: "", enable: true,
                        limitIp: 0, totalGB: 0, expiryTime: 0}],
             decryption: "none", fallbacks: []},
         streamSettings: {
-            network: "tcp", security: "reality", externalProxy: [],
-            tcpSettings: {acceptProxyProtocol: false, header: {type: "none"}},
-            realitySettings: {
-                show: false, xver: 0, target: $target, serverNames: [$name],
-                privateKey: $keys[0].obj.privateKey, minClientVer: "", maxClientVer: "",
-                maxTimediff: 0, shortIds: [$sid],
-                settings: {publicKey: $keys[0].obj.publicKey, fingerprint: "chrome",
-                           serverName: "", spiderX: "/"}}},
+            network: "xhttp", security: "none", externalProxy: [],
+            xhttpSettings: {path: $path, host: "", headers: {}, mode: "auto"}},
         sniffing: {enabled: true, destOverride: ["http", "tls", "quic"],
                    metadataOnly: false, routeOnly: false}}' > "$work/inbound.json"
     api_ok "add inbound" panel/api/inbounds/add -X POST \
         -H 'Content-Type: application/json' -d @"$work/inbound.json" >/dev/null
-    id=$(inbound_id)
-    [ -n "$id" ] || die "inbound was not created"
-    log "inbound created on ${VPN_PORT}/tcp"
+    xhttp_id=$(inbound_id "$XHTTP_PORT")
+    [ -n "$xhttp_id" ] || die "the XHTTP inbound was not created"
+    log "XHTTP inbound created on 127.0.0.1:$XHTTP_PORT"
 else
-    log "inbound on ${VPN_PORT}/tcp already exists; keys kept"
+    log "XHTTP inbound already exists; client ID and path kept"
 fi
-# The inbound's name is the profile name in the client app. An external proxy
-# list left by the removed subscription (ADR-0010) is emptied. A handshake
-# without the client key goes to the cover site on this host, and the name
-# clients send is the cover name (ADR-0012). Nothing else changes: the keys, the
-# client ID and the short ID stay. The inbound as it was is kept, root-only, so
-# the change can be undone by hand.
-api_ok "read inbound" "panel/api/inbounds/get/$id" | jq '.obj | del(.clientStats)' > "$work/inbound-now.json"
-jq --arg remark "$INBOUND_REMARK" --arg target "127.0.0.1:$COVER_TLS_PORT" --arg name "$COVER_NAME" '
-    .remark = $remark | .streamSettings.externalProxy = []
-    | .streamSettings.realitySettings.target = $target
-    | .streamSettings.realitySettings.serverNames = [$name]' \
+# The inbound's name is the profile name in the client app (ADR-0011).
+api_ok "read inbound" "panel/api/inbounds/get/$xhttp_id" | jq '.obj | del(.clientStats)' > "$work/inbound-now.json"
+jq --arg remark "$INBOUND_REMARK" '.remark = $remark | .listen = "127.0.0.1"' \
     "$work/inbound-now.json" > "$work/inbound-want.json"
 if [ "$(jq -S . "$work/inbound-now.json")" != "$(jq -S . "$work/inbound-want.json")" ]; then
-    install -m 600 "$work/inbound-now.json" "$STATE_DIR/inbound-previous.json"
-    api_ok "update inbound" "panel/api/inbounds/update/$id" -X POST \
+    api_ok "update inbound" "panel/api/inbounds/update/$xhttp_id" -X POST \
         -H 'Content-Type: application/json' -d @"$work/inbound-want.json" >/dev/null
-    log "inbound updated: profile name, cover site on this host"
+    log "XHTTP inbound updated: profile name, loopback only"
 fi
 
-# 8. Firewall, then restart Xray so the template and inbound are live.
-ufw allow "${VPN_PORT}/tcp" comment 'VLESS Reality' >/dev/null
+api_ok "restart xray" panel/api/server/restartXrayService -X POST >/dev/null
+listening=""
+for _ in $(seq 1 20); do
+    if ss -Htln "sport = :$XHTTP_PORT" | grep -q . \
+        && ! ss -Htlnp "sport = :$VPN_PORT" | grep -q '"xray'; then listening=yes; break; fi
+    sleep 1
+done
+[ -n "$listening" ] || die "xray is not listening on 127.0.0.1:$XHTTP_PORT or still holds ${VPN_PORT}: $(api panel/api/xray/getXrayResult | jq -r '.obj')"
+if ss -Htln "sport = :$XHTTP_PORT" | awk '{print $4}' | grep -qv '^127\.'; then
+    die "the XHTTP inbound listens on a public address"
+fi
+log "xray listening on 127.0.0.1:$XHTTP_PORT"
 
-# Per-address limits on new connections to the VPN port, as one marked block at
-# the end of ufw's before-input chain, which runs ahead of the ALLOW rules. The
-# candidate file is tested against the live ruleset before it replaces the
-# current one, and the previous file comes back if the reload fails. Same
-# mechanism as the SSH limits in harden-vps.sh, with its own marker.
-set_before_rules_block() { # set_before_rules_block <marker> <file with rule lines>
-    local marker=$1 block=$2
-    awk -v begin="# BEGIN $marker" -v end="# END $marker" -v block="$block" '
-        $0 == begin { skip = 1 }
-        $0 == "*filter" { in_filter = 1 }
-        !skip && in_filter && $0 == "COMMIT" {
-            print begin
-            while ((getline line < block) > 0) print line
-            print end
-            in_filter = 0
-        }
-        !skip { print }
-        $0 == end { skip = 0 }' "$UFW_BEFORE" > "$work/before.rules"
-    grep -qxF "# END $marker" "$work/before.rules" || die "no filter table found in $UFW_BEFORE"
-    cmp -s "$work/before.rules" "$UFW_BEFORE" && return 0
+write_nginx_conf "$VPN_PORT"
+for name in "$COVER_DOMAIN" "$COVER_NAME"; do
+    serves_page --http2 --resolve "$name:$VPN_PORT:127.0.0.1" "https://$name:$VPN_PORT/" \
+        || die "nginx does not answer for $name on ${VPN_PORT}"
+done
+log "nginx holds ${VPN_PORT}/tcp: site and tunnel path"
+
+# 8. Firewall: only Cloudflare reaches 80 and 443 (added in step 6). The rules
+#    that admitted everyone, and the per-address limits on 443 (ADR-0005,
+#    superseded by ADR-0013), are removed.
+for rule in "${VPN_PORT}/tcp" 80/tcp; do
+    for _ in 1 2 3; do
+        ufw status | grep -Eq "^$rule[[:space:]]+ALLOW[[:space:]]+Anywhere" || break
+        ufw --force delete allow "$rule" >/dev/null || die "could not delete the ufw rule that admits everyone to $rule"
+    done
+    ! ufw status | grep -Eq "^$rule[[:space:]]+ALLOW[[:space:]]+Anywhere" \
+        || die "the ufw rule that admits everyone to $rule is still there"
+done
+if grep -qxF "# BEGIN $LIMITS_MARKER" "$UFW_BEFORE"; then
+    awk -v begin="# BEGIN $LIMITS_MARKER" -v end="# END $LIMITS_MARKER" '
+        $0 == begin { skip = 1 } !skip { print } $0 == end { skip = 0 }' "$UFW_BEFORE" > "$work/before.rules"
     iptables-restore --test --noflush < "$work/before.rules" \
-        || die "new firewall rules for '$marker' did not validate; nothing changed"
+        || die "firewall rules without the port-443 limits did not validate; nothing changed"
     cp -p "$UFW_BEFORE" "$work/before.rules.bak"
     cat "$work/before.rules" > "$UFW_BEFORE"
     if ! ufw reload >/dev/null; then
         cat "$work/before.rules.bak" > "$UFW_BEFORE"
         ufw reload >/dev/null
-        die "ufw did not reload with the rules for '$marker'; previous rules restored"
+        die "ufw did not reload without the port-443 limits; previous rules restored"
     fi
-}
-cat > "$work/limits" <<EOF
--A ufw-before-input -p tcp --syn --dport $VPN_PORT -m connlimit --connlimit-above $VPN_MAX_CONCURRENT --connlimit-mask 32 -j DROP
--A ufw-before-input -p tcp --syn --dport $VPN_PORT -m hashlimit --hashlimit-name vpn-new --hashlimit-mode srcip --hashlimit-above $VPN_MAX_NEW_PER_SECOND/second --hashlimit-burst $VPN_NEW_BURST -j DROP
-EOF
-set_before_rules_block "$LIMITS_MARKER" "$work/limits"
-log "per-address connection limits applied on ${VPN_PORT}/tcp"
+    log "per-address limits on ${VPN_PORT}/tcp removed"
+fi
+log "80/tcp and ${VPN_PORT}/tcp closed to everyone but Cloudflare"
 
-api_ok "restart xray" panel/api/server/restartXrayService -X POST >/dev/null
-listening=""
-for _ in $(seq 1 20); do
-    if ss -Htln "sport = :$VPN_PORT" | grep -q .; then listening=yes; break; fi
-    sleep 1
-done
-[ -n "$listening" ] || die "xray is not listening on ${VPN_PORT}/tcp: $(api panel/api/xray/getXrayResult | jq -r '.obj')"
-log "xray listening on ${VPN_PORT}/tcp"
-
-# 9. Client link, built from what the panel stores. Written to a root-only file.
-api_ok "read inbound" "panel/api/inbounds/get/$id" | jq -r --arg ip "$public_ip" --arg email "$CLIENT_EMAIL" --arg name "$INBOUND_REMARK" '
+# 9. Client link, built from what the panel stores. It names the host, not the
+#    address: the client reaches Cloudflare, which reaches this server.
+#    Written to a root-only file.
+api_ok "read inbound" "panel/api/inbounds/get/$xhttp_id" | jq -r \
+    --arg host "$COVER_NAME" --argjson port "$VPN_PORT" --arg email "$CLIENT_EMAIL" --arg name "$INBOUND_REMARK" '
     .obj as $in
-    | ($in.settings.clients[] | select(.email == $email)) as $c
-    | $in.streamSettings.realitySettings as $r
-    | "vless://\($c.id)@\($ip):\($in.port)?encryption=none&flow=\($c.flow)&type=tcp&headerType=none&security=reality&sni=\($r.serverNames[0])&fp=\($r.settings.fingerprint)&pbk=\($r.settings.publicKey)&sid=\($r.shortIds[0])&spx=%2F#\($name | @uri)"' \
+    | ($in.settings | if type == "string" then fromjson else . end) as $s
+    | ($in.streamSettings | if type == "string" then fromjson else . end) as $st
+    | ($s.clients[] | select(.email == $email)) as $c
+    | "vless://\($c.id)@\($host):\($port)?encryption=none&security=tls&sni=\($host)&fp=chrome&alpn=h2%2Chttp%2F1.1&type=xhttp&host=\($host)&path=\($st.xhttpSettings.path | @uri)&mode=auto#\($name | @uri)"' \
     > "$LINK_FILE"
 chmod 600 "$LINK_FILE"
 grep -q '^vless://' "$LINK_FILE" || die "client link was not written"
@@ -703,7 +791,8 @@ rm -f "$STATE_DIR/subscription-url.txt"
 
 log "final state:"
 systemctl is-active x-ui
-ufw status | sed -n '1,12p'
+ufw status | grep -v "# $CF_RULE_COMMENT" | sed -n '1,12p'
+log "plus $(ufw status | grep -c "# $CF_RULE_COMMENT") rules admitting Cloudflare's ranges to 80 and ${VPN_PORT}"
 if [ -n "$reboot_needed" ]; then
     log "REBOOT NEEDED: IPv6 is off now, but stays off across restarts only after one reboot"
 fi

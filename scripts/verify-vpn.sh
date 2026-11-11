@@ -19,6 +19,8 @@ readonly XRAY=/usr/local/x-ui/bin/xray-linux-amd64
 readonly XRAY_CONFIG=/usr/local/x-ui/bin/config.json
 readonly SOCKS_PORT=10808
 readonly VPN_PORT=443
+readonly XHTTP_PORT=10443
+readonly CF_IPS_FILE=/root/vpn/cloudflare-ips-v4.txt
 readonly COVER_DOMAIN=casedigestai.com
 readonly COVER_NAME=status.casedigestai.com
 readonly COVER_PAGE_TEXT='CaseDigest AI'
@@ -41,7 +43,8 @@ cleanup() { [ -n "$client_pid" ] && kill "$client_pid" 2>/dev/null; rm -rf "$wor
 trap cleanup EXIT
 chmod 700 "$work"
 
-# Client config from the link, exactly as a phone app would read it.
+# Client config from the link, exactly as a phone app would read it. It dials
+# the name in the link, so the tunnel runs through Cloudflare (ADR-0013).
 python3 - "$LINK_FILE" "$SOCKS_PORT" > "$work/client.json" <<'PY'
 import json, sys, urllib.parse
 u = urllib.parse.urlsplit(open(sys.argv[1]).read().strip())
@@ -52,12 +55,18 @@ print(json.dumps({
     "outbounds": [{
         "protocol": "vless",
         "settings": {"vnext": [{"address": u.hostname, "port": u.port, "users": [
-            {"id": u.username, "encryption": "none", "flow": q["flow"]}]}]},
-        "streamSettings": {"network": "tcp", "security": "reality", "realitySettings": {
-            "serverName": q["sni"], "fingerprint": q["fp"], "publicKey": q["pbk"],
-            "shortId": q["sid"], "spiderX": "/"}}}]}))
+            {"id": u.username, "encryption": "none"}]}]},
+        "streamSettings": {"network": q["type"], "security": q["security"],
+            "tlsSettings": {"serverName": q["sni"], "fingerprint": q["fp"], "alpn": q["alpn"].split(",")},
+            "xhttpSettings": {"host": q["host"], "path": q["path"], "mode": q.get("mode", "auto")}}}]}))
 PY
-server_ip=$(python3 -c 'import sys,urllib.parse; print(urllib.parse.urlsplit(open(sys.argv[1]).read().strip()).hostname)' "$LINK_FILE")
+server_ip=$(ip -4 route get 1.1.1.1 | awk '{for (i = 1; i < NF; i++) if ($i == "src") print $(i + 1)}')
+link_host=$(python3 -I -c 'import sys,urllib.parse; print(urllib.parse.urlsplit(open(sys.argv[1]).read().strip()).hostname)' "$LINK_FILE")
+cf_only() { # cf_only <address...>  -> true when every address is in Cloudflare's ranges
+    [ -s "$CF_IPS_FILE" ] && [ "$#" -gt 0 ] && python3 -I -c 'import ipaddress, sys
+nets = [ipaddress.ip_network(l.strip()) for l in open(sys.argv[1]) if l.strip()]
+sys.exit(0 if all(any(ipaddress.ip_address(a) in n for n in nets) for a in sys.argv[2:]) else 1)' "$CF_IPS_FILE" "$@"
+}
 
 # One DNS query through the SOCKS proxy, over TCP (default) or UDP; prints the
 # number of answers. Prints nothing and fails when no reply comes.
@@ -213,10 +222,21 @@ check R-vpn-server-14.a "the client link is named 'กรุงเทพฯ clou
     python3 -I -c 'import sys, urllib.parse; sys.exit(0 if urllib.parse.unquote(urllib.parse.urlsplit(open(sys.argv[1]).read().strip()).fragment) == sys.argv[2] else 1)' \
     "$LINK_FILE" 'กรุงเทพฯ cloud.z.com'
 
-# R-vpn-server-14.c: the name clients send is the cover name.
-check R-vpn-server-14.c "the client link sends the server name $COVER_NAME" \
-    python3 -I -c 'import sys, urllib.parse; sys.exit(0 if dict(urllib.parse.parse_qsl(urllib.parse.urlsplit(open(sys.argv[1]).read().strip()).query)).get("sni") == sys.argv[2] else 1)' \
+# R-vpn-server-14.c: the link carries the tunnel as XHTTP over TLS, with the
+# cover name as server name and HTTP host.
+check R-vpn-server-14.c "the client link is XHTTP over TLS with sni and host $COVER_NAME" \
+    python3 -I -c 'import sys, urllib.parse; q = dict(urllib.parse.parse_qsl(urllib.parse.urlsplit(open(sys.argv[1]).read().strip()).query)); sys.exit(0 if (q.get("type"), q.get("security"), q.get("sni"), q.get("host")) == ("xhttp", "tls", sys.argv[2], sys.argv[2]) else 1)' \
     "$LINK_FILE" "$COVER_NAME"
+
+# R-vpn-server-17.a (inside half): the link names the cover name, not an
+# address, and that name resolves to Cloudflare's ranges only.
+resolved=$(getent ahostsv4 "$link_host" | awk '{print $1}' | sort -u | tr '\n' ' ')
+# shellcheck disable=SC2086
+if [ "$link_host" = "$COVER_NAME" ] && cf_only $resolved; then
+    pass R-vpn-server-17.a "the link names $COVER_NAME, which resolves to Cloudflare only"
+else
+    fail R-vpn-server-17.a "the link names '${link_host:-nothing}', resolving to '${resolved:-nothing}', not only Cloudflare"
+fi
 
 # R-vpn-server-04.a (inside half): a TLS client without the key gets the cover
 # site: a certificate that validates for the cover name, and the landing page.
@@ -236,11 +256,16 @@ else
     fail R-vpn-server-04.b "the bare domain or a client with no server name did not get the site's certificate"
 fi
 
-# R-vpn-server-04.c: a handshake without the key is handed to a web server on
-# this host, so answering a probe opens no connection to another host.
-check R-vpn-server-04.c "connections without the key go to a web server on loopback" \
-    jq -e --argjson p "$VPN_PORT" '.inbounds[] | select(.port == $p) | .streamSettings.realitySettings
-        | (.target // .dest) | startswith("127.0.0.1:")' "$XRAY_CONFIG"
+# R-vpn-server-04.c: the tunnel inbound listens on loopback only, and the web
+# server, not the proxy, holds the public port.
+if jq -e --argjson p "$XHTTP_PORT" '[.inbounds[] | select(.port == $p and .listen == "127.0.0.1"
+        and .streamSettings.network == "xhttp")] | length == 1' "$XRAY_CONFIG" >/dev/null 2>&1 \
+    && ss -Htlnp "sport = :$VPN_PORT" | grep -q '"nginx' \
+    && ! ss -Htlnp "sport = :$VPN_PORT" | grep -q '"xray'; then
+    pass R-vpn-server-04.c "the tunnel inbound is on loopback only and nginx holds ${VPN_PORT}"
+else
+    fail R-vpn-server-04.c "the tunnel inbound is not loopback-only, or ${VPN_PORT} is not held by nginx alone"
+fi
 
 # R-vpn-server-05.a: nothing but SSH, port 80 and the VPN port listens on a public address.
 # The one exception is the UDP socket Xray holds open for its WARP tunnel: it is
@@ -257,12 +282,22 @@ else
     fail R-vpn-server-05.a "public listeners are: tcp ${tcp_listeners:-none}; udp not owned by the proxy: ${udp_other:-none}"
 fi
 
-# R-vpn-server-05.c: the firewall admits only SSH, port 80 and the VPN port.
-rules=$(ufw status | awk '/ALLOW/ {print $1}' | sort -u | tr '\n' ' ')
-[ "$rules" = "$(printf '%s/tcp\n80/tcp\n%s/tcp\n' "$ssh_port" "$VPN_PORT" | sort -u | tr '\n' ' ')" ] \
-    && ufw status verbose | grep -q 'deny (incoming)' \
-    && pass R-vpn-server-05.c "ufw denies incoming except SSH, 80/tcp and ${VPN_PORT}/tcp" \
-    || fail R-vpn-server-05.c "ufw rules are: $rules"
+# R-vpn-server-05.c: the firewall admits SSH from anywhere, and 80 and the VPN
+# port only from Cloudflare's ranges: one rule per range and port, no other.
+ufw status | awk '/ ALLOW / {print $1 " " $3}' | sort -u > "$work/ufw-rules"
+{
+    printf '%s/tcp Anywhere\n' "$ssh_port"
+    # Cloudflare's list has no newline after its last range; read that one too.
+    while read -r range || [ -n "$range" ]; do
+        [ -n "$range" ] && printf '80/tcp %s\n%s/tcp %s\n' "$range" "$VPN_PORT" "$range"
+    done < "$CF_IPS_FILE"
+} | sort -u > "$work/ufw-want"
+if [ -s "$CF_IPS_FILE" ] && cmp -s "$work/ufw-rules" "$work/ufw-want" \
+    && ufw status verbose | grep -q 'deny (incoming)'; then
+    pass R-vpn-server-05.c "ufw denies incoming except SSH, and 80/tcp and ${VPN_PORT}/tcp from Cloudflare's $(grep -c . "$CF_IPS_FILE") ranges"
+else
+    fail R-vpn-server-05.c "ufw rules differ from SSH plus Cloudflare's ranges: $(diff "$work/ufw-want" "$work/ufw-rules" | grep -E '^[<>]' | head -n 4 | tr '\n' ';')"
+fi
 
 # R-vpn-server-06.a: the server keeps no record of client connections.
 check R-vpn-server-06.a "Xray access log and DNS log are off" \
@@ -327,26 +362,15 @@ else
     fail R-vpn-server-07.c "automatic reboot after updates is not set for 04:00"
 fi
 
-# R-vpn-server-10.a: one address cannot hold more than 1000 connections to the VPN
-# port or open more than 100 new ones per second (burst 300).
-vpn_rules=$(iptables -S ufw-before-input 2>/dev/null | grep -- "--dport $VPN_PORT " | grep -- '-j DROP')
-if printf '%s\n' "$vpn_rules" | grep -q -- '--connlimit-above 1000 --connlimit-mask 32' \
-    && printf '%s\n' "$vpn_rules" | grep -- '--hashlimit-mode srcip' \
-        | grep -- '--hashlimit-above 100/sec' | grep -q -- '--hashlimit-burst 300'; then
-    pass R-vpn-server-10.a "per-address connection limits are loaded on ${VPN_PORT}/tcp"
-else
-    fail R-vpn-server-10.a "per-address connection limits are missing on ${VPN_PORT}/tcp"
-fi
-
 # R-vpn-server-11.a: new TCP connections use BBR congestion control.
 cc=$(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null)
 [ "$cc" = bbr ] \
     && pass R-vpn-server-11.a "congestion control for new TCP connections is BBR" \
     || fail R-vpn-server-11.a "congestion control for new TCP connections is '${cc:-unknown}'"
 
-# R-vpn-server-11.b: the server's side of a client connection to the VPN port uses BBR.
-# A request through the temporary client is held open; that client dials the server's
-# own address, so its connections are the ones on the VPN port whose peer is that address.
+# R-vpn-server-11.b: the server's side of a tunnel connection on the VPN port uses BBR.
+# A request through the temporary client is held open; it reaches the server through
+# Cloudflare, so the connections inspected are those on the VPN port from outside.
 cat > "$work/hold.py" <<'PY'
 import socket, struct, sys, time
 s = socket.create_connection(("127.0.0.1", int(sys.argv[1])), timeout=10)
@@ -359,7 +383,7 @@ PY
 python3 "$work/hold.py" "$SOCKS_PORT" >/dev/null 2>&1 &
 hold_pid=$!
 sleep 2
-tunnel_conns=$(ss -HtinO "sport = :$VPN_PORT and dst $server_ip" 2>/dev/null)
+tunnel_conns=$(ss -HtinO state established "sport = :$VPN_PORT and not dst 127.0.0.0/8" 2>/dev/null)
 kill "$hold_pid" 2>/dev/null
 if [ -z "$tunnel_conns" ]; then
     fail R-vpn-server-11.b "no client connection to the VPN port was found to inspect"

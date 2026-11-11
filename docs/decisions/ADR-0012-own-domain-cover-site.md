@@ -1,6 +1,6 @@
 # ADR-0012: Cover site on the owner's own domain, served from the VPS
 
-- Status: accepted
+- Status: accepted; the Reality inbound and the direct link superseded by ADR-0013
 - Date: 2026-11-12
 - Supersedes: ADR-0003
 - Change: `changes/archive/2026-11-12-serve-own-cover-site/`
