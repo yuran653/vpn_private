@@ -1,8 +1,8 @@
 # Personal VPS located in Thailand
 
-Deploy and harden a VLESS + XTLS-Reality VPN server on a bare Ubuntu VPS. The server must prevent every identity disclosure that can be enforced server-side: DNS leaks, IPv6 egress, tunnel fingerprinting by DPI, and panel discovery.
+Deploy and harden a VLESS VPN server on a bare Ubuntu VPS, reached by clients only through Cloudflare (VLESS over XHTTP, ADR-0013). The server must prevent every identity disclosure that can be enforced server-side: DNS leaks, IPv6 egress, tunnel fingerprinting by DPI, and panel discovery.
 
-Stack: Ubuntu 22.04/24.04 LTS, Xray core managed through the 3x-ui panel, Cloudflare WARP as the exit for client traffic (ADR-0008), nginx, certbot and a Docker container for the cover site (ADR-0012), ufw, fail2ban, unattended-upgrades
+Stack: Ubuntu 22.04/24.04 LTS, Xray core managed through the 3x-ui panel, Cloudflare in front of the server (ADR-0013), Cloudflare WARP as the exit for client traffic (ADR-0008), nginx, certbot and a Docker container for the cover site (ADR-0012), ufw, fail2ban, unattended-upgrades
 
 ## Commands
 

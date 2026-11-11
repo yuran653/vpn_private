@@ -46,7 +46,7 @@ The change records are in `changes/archive/2026-11-10-apply-vps-baseline/` and `
 
 ## VPN deployment
 
-`scripts/deploy-vpn.sh` installs 3x-ui and configures the VLESS + Reality server. Run the baseline script first. It takes no arguments and prints no secret:
+`scripts/deploy-vpn.sh` installs 3x-ui and configures the VLESS server, reached by clients only through Cloudflare (ADR-0013). Both site names must be proxied by Cloudflare before it runs. Run the baseline script first. It takes no arguments and prints no secret:
 
 ```bash
 scp -r scripts/deploy-vpn.sh scripts/verify-vpn.sh site zcom-th:/tmp/
@@ -66,17 +66,19 @@ ssh zcom-th 'sudo -n tail /root/vpn/deploy-run.log'      # repeat until it print
 
 ## Cover site
 
-The server is the website of `casedigestai.com` and `status.casedigestai.com` (ADR-0012). A connection to port 443 without the client key gets that site.
+The server is the website of `casedigestai.com` and `status.casedigestai.com` (ADR-0012), published through Cloudflare (ADR-0013).
 
-- nginx on the host answers on port 80 (certificate challenge, redirect to HTTPS) and on `127.0.0.1:8443` with the Let's Encrypt certificate. Its config, `/etc/nginx/conf.d/cover-site.conf`, is written by `deploy-vpn.sh`.
+- Cloudflare holds the domain's DNS and proxies both names (orange cloud, SSL mode "Full (strict)"). Clients and visitors connect to Cloudflare; Cloudflare connects to the server.
+- nginx on the host answers on port 80 (certificate challenge, redirect to HTTPS) and on port 443 with the Let's Encrypt certificate. One random path on 443 goes to the Xray XHTTP inbound on `127.0.0.1:10443`; every other path is the site. Its config, `/etc/nginx/conf.d/cover-site.conf`, is written by `deploy-vpn.sh`.
+- ufw admits 80 and 443 only from Cloudflare's IPv4 ranges, fetched by the deploy script into `/root/vpn/cloudflare-ips-v4.txt`. Re-run the script when Cloudflare changes its ranges.
 - The pages come from a Docker container in `/opt/cover-site`, published on `127.0.0.1:8080` only. The source is the repo's `site/` folder; change the page there and re-run the deploy script.
 - The certificate renews through `certbot.timer`. `scripts/verify-vpn.sh` rehearses a renewal (R-vpn-server-16.b).
-- The inbound as it was before the last change is in `/root/vpn/inbound-previous.json`, root-only.
+- The removed Reality inbound is in `/root/vpn/inbound-previous.json`, root-only.
 - Neither nginx nor the container keeps an access log.
 
 ## Updates and reboots
 
-Security updates install every night without an operator. When one needs a reboot, the host reboots itself at 04:00 Asia/Bangkok (ADR-0006); VPN connections drop for about a minute. One address may hold 1000 connections to port 443 and open 100 per second (ADR-0005).
+Security updates install every night without an operator. When one needs a reboot, the host reboots itself at 04:00 Asia/Bangkok (ADR-0006); VPN connections drop for about a minute. Port 443 has no per-address limits: every client arrives from a Cloudflare address (ADR-0013).
 
 ## TCP tuning
 
@@ -89,18 +91,21 @@ Client traffic does not leave from the server's own address. The deploy script r
 - The registration is in `/root/vpn/warp.json`. A re-run of the deploy script keeps it.
 - When WARP is unreachable, clients connect but no site loads. Nothing falls back to the server's own address. Check with `ssh zcom-th 'sudo -n bash /tmp/verify-vpn.sh'` (copy the script first): R-vpn-server-12.a fails while WARP is down.
 - If Cloudflare has dropped the registration, move `/root/vpn/warp.json` aside and re-run the deploy script; it registers a new device. Registering accepts Cloudflare's terms of service.
-- Clients keep the same link. They still connect to the server's own address on port 443.
+- Clients keep the same link.
 - The tunnel goes to `188.114.97.1`, which Cloudflare's Bangkok site answers from this host (ADR-0009). If Cloudflare routes that address to another site, R-vpn-server-12.f fails and names the site. Traffic is then slower, but the exit is still valid while R-vpn-server-12.a to 12.d pass.
 
 ## What the server does not defend against
 
-A volumetric DDoS fills the uplink before the firewall sees a packet. Only the provider can absorb it, and Reality cannot sit behind a CDN. The practical recovery is a new IP address from the provider, then the A records of `casedigestai.com` and `status.casedigestai.com` changed to it, then a re-run of `deploy-vpn.sh` to rewrite the client link. The deploy script stops before it touches the tunnel while either name still resolves elsewhere.
+A flood aimed at the site names is absorbed by Cloudflare. A volumetric DDoS aimed at the server's own address, which is in DNS history and certificate logs from before ADR-0013, still fills the uplink before the firewall sees a packet. The practical recovery is a new IP address from the provider, then the two A records in Cloudflare changed to it (still proxied), then a re-run of `deploy-vpn.sh`. The client link names the host, not the address, so it does not change.
+
+If Cloudflare is blocked or throttled where a user is, the VPN is unreachable there: there is no second way in (flag 6 in `docs/censor-red-flags.md`).
 
 Secrets stay on the VPS, readable by root only:
 
 | What | Where |
 |---|---|
 | Client link (`vless://...`) | `/root/vpn/vless-link.txt` |
+| Tunnel path (also in the link and the nginx config) | `/root/vpn/xhttp-path` |
 | Panel user, password, port, path and API token | `/etc/x-ui/install-result.env` |
 | Installer output | `/root/vpn/install.log` |
 | WARP registration (private key, device id, token) | `/root/vpn/warp.json` |
