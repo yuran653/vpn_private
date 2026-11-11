@@ -1,0 +1,405 @@
+<title>Bangkok VPN Path</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a stack of slide-like bands that follow one packet from the phone to the website, then the guards around it. */
+:root {
+  --bg: #eef1f4;          /* cool concrete */
+  --panel: #ffffff;
+  --ink: #142231;         /* deep harbour blue */
+  --muted: #566577;
+  --line: #cfd6de;
+  --gold: #b97a12;        /* temple gold: the tunnel */
+  --gold-soft: #f6ead2;
+  --cf: #d2611c;          /* Cloudflare leg */
+  --ok: #1f7a55;
+  --ok-soft: #dcefe5;
+  --no: #a8323a;
+  --no-soft: #f5dfe0;
+  --display: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1822; --panel: #16222f; --ink: #e6ecf2; --muted: #9aa9b9; --line: #2a3a4b;
+    --gold: #e3a640; --gold-soft: #3a2d15; --cf: #f08a4b; --ok: #5cc596; --ok-soft: #173327;
+    --no: #ef7d84; --no-soft: #3a1d21; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f1822; --panel: #16222f; --ink: #e6ecf2; --muted: #9aa9b9; --line: #2a3a4b;
+  --gold: #e3a640; --gold-soft: #3a2d15; --cf: #f08a4b; --ok: #5cc596; --ok-soft: #173327;
+  --no: #ef7d84; --no-soft: #3a1d21; color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--ink);
+  font: 400 16px/1.6 var(--body);
+  -webkit-font-smoothing: antialiased;
+}
+.wrap {
+  max-width: 1080px; margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.slide { padding-block: 56px; border-top: 1px solid var(--line); }
+.slide:first-of-type { border-top: 0; }
+h1, h2, h3 { font-family: var(--display); text-wrap: balance; margin: 0; letter-spacing: -0.01em; }
+h1 { font-size: clamp(2.2rem, 5.5vw, 3.8rem); font-weight: 800; line-height: 1.04; }
+h2 { font-size: clamp(1.6rem, 3.4vw, 2.3rem); font-weight: 700; line-height: 1.15; }
+h3 { font-size: 1.08rem; font-weight: 700; }
+p { margin: 0; }
+.lede { font-size: 1.15rem; color: var(--muted); max-width: 62ch; }
+.eyebrow {
+  font: 500 0.78rem/1 var(--mono); text-transform: uppercase; letter-spacing: 0.12em;
+  color: var(--gold); display: flex; gap: 10px; align-items: center;
+}
+.eyebrow .n { color: var(--muted); }
+.head { display: grid; gap: 14px; margin-bottom: 32px; }
+code, .mono { font-family: var(--mono); font-size: 0.88em; }
+code { background: var(--gold-soft); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
+
+/* Hero */
+.hero { padding-block: 64px 40px; display: grid; gap: 22px; }
+.thai { font-family: var(--body); font-weight: 600; color: var(--gold); }
+.facts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+.chip {
+  font: 500 0.8rem/1 var(--mono); padding: 7px 10px; border-radius: 999px;
+  border: 1px solid var(--line); background: var(--panel); color: var(--muted);
+}
+
+/* Diagram */
+.diagram { overflow-x: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 18px 12px; }
+.diagram svg { display: block; width: 100%; min-width: 860px; height: auto; }
+.d-node { fill: var(--panel); stroke: var(--line); stroke-width: 1.5; }
+.d-node.vps { stroke: var(--gold); stroke-width: 2; fill: var(--gold-soft); }
+.d-node.cf { stroke: var(--cf); stroke-width: 2; }
+.d-title { font: 700 15px var(--display); fill: var(--ink); }
+.d-sub { font: 400 12px var(--body); fill: var(--muted); }
+.d-mono { font: 500 11.5px var(--mono); fill: var(--muted); }
+.d-link { stroke: var(--gold); stroke-width: 4; fill: none; stroke-linecap: round; }
+.d-link.cf { stroke: var(--cf); }
+.d-link.plain { stroke: var(--muted); stroke-width: 2; }
+.d-dash { stroke: var(--muted); stroke-width: 1.5; stroke-dasharray: 5 5; fill: none; }
+.d-tag { font: 600 11.5px var(--mono); fill: var(--ink); }
+.d-note { fill: var(--bg); stroke: var(--line); }
+.d-arrow { fill: var(--muted); }
+.d-gold { fill: var(--gold); }
+.d-cf { fill: var(--cf); }
+.packet { fill: var(--gold); offset-path: path("M190 170 H810"); animation: travel 4.5s cubic-bezier(.55,.1,.45,.9) infinite; }
+@keyframes travel { 0% { offset-distance: 0%; opacity: 0; } 8% { opacity: 1; } 92% { opacity: 1; } 100% { offset-distance: 100%; opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .packet { display: none; } }
+.legend { display: flex; flex-wrap: wrap; gap: 18px; margin-top: 14px; font-size: 0.88rem; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 8px; }
+.sw { width: 22px; height: 4px; border-radius: 2px; display: inline-block; }
+
+/* Steps along the path */
+.steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+.step { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 20px; display: grid; gap: 10px; align-content: start; min-width: 0; }
+.step .k { font: 500 0.75rem/1 var(--mono); color: var(--gold); letter-spacing: 0.08em; text-transform: uppercase; }
+.step p, .step li { font-size: 0.94rem; color: var(--muted); }
+.step ul { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
+
+/* Who sees what */
+.table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+table { width: 100%; border-collapse: collapse; min-width: 720px; font-size: 0.94rem; }
+th, td { text-align: left; padding: 14px 16px; vertical-align: top; border-top: 1px solid var(--line); }
+thead th { border-top: 0; font: 500 0.75rem/1.2 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); background: var(--bg); }
+tbody th { font-family: var(--display); font-weight: 700; white-space: nowrap; }
+td.sees { color: var(--ink); }
+td.hidden { color: var(--muted); }
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 8px; vertical-align: 1px; }
+.dot.ok { background: var(--ok); } .dot.no { background: var(--no); }
+
+/* Leak guards */
+.guards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.guard { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 20px; display: grid; gap: 10px; align-content: start; min-width: 0; }
+.guard .risk { font: 500 0.78rem/1.3 var(--mono); color: var(--no); background: var(--no-soft); padding: 4px 8px; border-radius: 6px; justify-self: start; }
+.guard p { font-size: 0.94rem; color: var(--muted); }
+.guard .req { font: 400 0.76rem/1.3 var(--mono); color: var(--ok); }
+
+/* Host and numbers */
+.split { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 32px; align-items: start; }
+.list { list-style: none; margin: 0; padding: 0; display: grid; }
+.list li { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 16px; padding: 12px 0; border-top: 1px solid var(--line); font-size: 0.94rem; }
+.list li:first-child { border-top: 0; }
+.list b { font-family: var(--display); font-weight: 700; }
+.list span { color: var(--muted); }
+.nums { display: grid; gap: 12px; }
+.num { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; display: grid; gap: 4px; }
+.num .v { font: 800 1.9rem/1 var(--display); font-variant-numeric: tabular-nums; }
+.num .v small { font: 500 0.9rem var(--mono); color: var(--muted); margin-left: 4px; }
+.num .l { font-size: 0.88rem; color: var(--muted); }
+
+/* Operator loop */
+.ops { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; counter-reset: op; }
+.op { border-top: 3px solid var(--gold); padding-top: 14px; display: grid; gap: 8px; align-content: start; min-width: 0; }
+.op p { font-size: 0.94rem; color: var(--muted); }
+.term { background: var(--ink); color: var(--bg); font: 400 0.82rem/1.55 var(--mono); border-radius: 8px; padding: 12px 14px; overflow-x: auto; white-space: pre; }
+
+footer { padding-block: 32px 48px; color: var(--muted); font-size: 0.86rem; border-top: 1px solid var(--line); }
+
+@media (max-width: 900px) {
+  .steps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .guards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .split { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 600px) {
+  .slide { padding-block: 40px; }
+  .steps, .guards, .ops { grid-template-columns: minmax(0, 1fr); }
+  .list li { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+}
+a { color: var(--gold); }
+a:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+</style>
+
+<main class="wrap">
+
+  <header class="hero">
+    <div class="eyebrow"><span>Personal VPS</span><span class="n">/</span><span>Thailand</span></div>
+    <h1>One private road from your phone to the internet, by way of Bangkok</h1>
+    <p class="lede">A VLESS + XTLS‑Reality server on an Ubuntu VPS. To anyone watching the wire it looks like a visit to Samsung's website. Your traffic leaves through Cloudflare WARP in Thailand, and the server closes every leak it can control: DNS, IPv6, fingerprinting and panel discovery.</p>
+    <div class="facts">
+      <span class="chip">Xray via 3x‑ui</span>
+      <span class="chip">VLESS · XTLS‑Vision · Reality</span>
+      <span class="chip">TCP 443</span>
+      <span class="chip">Exit: Cloudflare WARP, BKK</span>
+      <span class="chip">Profile: <span class="thai">กรุงเทพฯ</span> cloud.z.com</span>
+    </div>
+  </header>
+
+  <section class="slide" aria-labelledby="s-path">
+    <div class="head">
+      <div class="eyebrow"><span class="n">01</span><span>The path</span></div>
+      <h2 id="s-path">Four stops, one way out</h2>
+    </div>
+    <div class="diagram" role="img" aria-label="Diagram: your device connects over Reality on TCP 443 to the VPS in Thailand, which forwards everything through a WireGuard tunnel to Cloudflare's Bangkok site, which reaches the website. The ISP sees only TLS to www.samsung.com. A probe without the key is handed to the real www.samsung.com.">
+      <svg viewBox="0 0 1000 350" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <marker id="ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" class="d-arrow"/>
+          </marker>
+        </defs>
+
+        <!-- observer over link 1 -->
+        <rect x="150" y="12" width="190" height="56" rx="8" class="d-note"/>
+        <text x="162" y="34" class="d-title" style="font-size:13px">Your ISP / Wi‑Fi sees</text>
+        <text x="162" y="54" class="d-mono">TLS 1.3 → www.samsung.com</text>
+        <path d="M240 68 V150" class="d-dash"/>
+
+        <!-- links -->
+        <path d="M190 170 H290" class="d-link"/>
+        <path d="M460 170 H560" class="d-link"/>
+        <path d="M730 170 H810" class="d-link cf"/>
+        <circle r="6" class="packet"/>
+
+        <text x="240" y="200" text-anchor="middle" class="d-tag">Reality :443</text>
+        <text x="240" y="216" text-anchor="middle" class="d-mono">~220 ms</text>
+        <text x="510" y="200" text-anchor="middle" class="d-tag">WireGuard</text>
+        <text x="510" y="216" text-anchor="middle" class="d-mono">1.4 ms</text>
+        <text x="770" y="200" text-anchor="middle" class="d-tag">IPv4</text>
+
+        <!-- nodes -->
+        <rect x="20" y="110" width="170" height="120" rx="12" class="d-node"/>
+        <text x="38" y="140" class="d-title">Your device</text>
+        <text x="38" y="162" class="d-sub">Happ, one vless:// link</text>
+        <text x="38" y="182" class="d-mono">fp: chrome</text>
+        <text x="38" y="200" class="d-mono">flow: vision</text>
+
+        <rect x="290" y="110" width="170" height="120" rx="12" class="d-node vps"/>
+        <text x="308" y="140" class="d-title">VPS, Thailand</text>
+        <text x="308" y="162" class="d-sub">Xray in 3x‑ui</text>
+        <text x="308" y="182" class="d-mono">checks the key</text>
+        <text x="308" y="200" class="d-mono">routes, no logs</text>
+
+        <rect x="560" y="110" width="170" height="120" rx="12" class="d-node cf"/>
+        <text x="578" y="140" class="d-title">Cloudflare BKK</text>
+        <text x="578" y="162" class="d-sub">WARP exit</text>
+        <text x="578" y="182" class="d-mono">IP placed in TH</text>
+        <text x="578" y="200" class="d-mono">188.114.97.1:2408</text>
+
+        <rect x="810" y="110" width="170" height="120" rx="12" class="d-node"/>
+        <text x="828" y="140" class="d-title">The website</text>
+        <text x="828" y="162" class="d-sub">sees a Cloudflare</text>
+        <text x="828" y="180" class="d-sub">address in Thailand</text>
+
+        <!-- prober branch -->
+        <path d="M375 230 V290 H560" class="d-dash" marker-end="url(#ah)"/>
+        <text x="388" y="266" class="d-mono">probe without key</text>
+        <rect x="565" y="270" width="230" height="44" rx="8" class="d-note"/>
+        <text x="580" y="297" class="d-mono" style="fill:var(--ink)">real www.samsung.com:443</text>
+      </svg>
+    </div>
+    <div class="legend">
+      <span><i class="sw" style="background:var(--gold)"></i>Encrypted, inside the tunnel</span>
+      <span><i class="sw" style="background:var(--cf)"></i>Leaves Cloudflare to the site</span>
+      <span><i class="sw" style="background:var(--muted)"></i>What an outsider can observe</span>
+    </div>
+  </section>
+
+  <section class="slide" aria-labelledby="s-steps">
+    <div class="head">
+      <div class="eyebrow"><span class="n">02</span><span>Step by step</span></div>
+      <h2 id="s-steps">What happens to one request</h2>
+    </div>
+    <div class="steps">
+      <article class="step">
+        <span class="k">1 · Device</span>
+        <h3>Looks like a Chrome visit</h3>
+        <p>Happ opens TCP 443 to the VPS and sends a TLS 1.3 hello with Chrome's fingerprint and the name <code>www.samsung.com</code>. Your traffic rides inside, split by XTLS‑Vision so its shape does not stand out.</p>
+      </article>
+      <article class="step">
+        <span class="k">2 · Reality</span>
+        <h3>Key or cover site</h3>
+        <p>The server checks the hello for the client's short ID and X25519 key. With it, the tunnel opens. Without it, the connection is passed through to the real Samsung site, valid certificate and all.</p>
+      </article>
+      <article class="step">
+        <span class="k">3 · Routing</span>
+        <h3>Three rules</h3>
+        <ul>
+          <li>Port 53 to any address → answered by the server's own DNS</li>
+          <li>Any IPv6 destination → blocked</li>
+          <li>Everything else → <code>warp</code>, the only outbound</li>
+        </ul>
+      </article>
+      <article class="step">
+        <span class="k">4 · Exit</span>
+        <h3>Out through Bangkok</h3>
+        <p>Xray runs WireGuard to WARP in user space, IPv4 only, MTU 1280. Cloudflare's Bangkok site is 1.4 ms away. Sites see a WARP address placed in Thailand, so YouTube Music works.</p>
+      </article>
+    </div>
+  </section>
+
+  <section class="slide" aria-labelledby="s-who">
+    <div class="head">
+      <div class="eyebrow"><span class="n">03</span><span>Exposure</span></div>
+      <h2 id="s-who">Who sees what</h2>
+      <p class="lede">No single party sees both who you are and where you go, except you.</p>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th scope="col">Observer</th><th scope="col">Sees</th><th scope="col">Does not see</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">Your ISP or Wi‑Fi</th>
+            <td class="sees"><i class="dot no"></i>A TLS 1.3 connection to a Thai host named <span class="mono">www.samsung.com</span></td>
+            <td class="hidden"><i class="dot ok"></i>Sites you visit, your DNS lookups, that it is a VPN</td></tr>
+          <tr><th scope="row">A censor probing :443</th>
+            <td class="sees"><i class="dot no"></i>Samsung's real certificate and web page</td>
+            <td class="hidden"><i class="dot ok"></i>Any sign of a proxy; the panel (closed to the internet)</td></tr>
+          <tr><th scope="row">The VPS provider</th>
+            <td class="sees"><i class="dot no"></i>Encrypted traffic in from you, WireGuard UDP out to Cloudflare</td>
+            <td class="hidden"><i class="dot ok"></i>Destinations and DNS, both inside encryption</td></tr>
+          <tr><th scope="row">The server itself</th>
+            <td class="sees"><i class="dot no"></i>Traffic totals in the panel</td>
+            <td class="hidden"><i class="dot ok"></i>No access log and no DNS log are kept</td></tr>
+          <tr><th scope="row">Cloudflare</th>
+            <td class="sees"><i class="dot no"></i>Destinations, coming from the VPS address</td>
+            <td class="hidden"><i class="dot ok"></i>Your device's address</td></tr>
+          <tr><th scope="row">Websites</th>
+            <td class="sees"><i class="dot no"></i>A Cloudflare WARP IPv4 address in Thailand</td>
+            <td class="hidden"><i class="dot ok"></i>Your address and the VPS address</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="slide" aria-labelledby="s-leaks">
+    <div class="head">
+      <div class="eyebrow"><span class="n">04</span><span>Leak guards</span></div>
+      <h2 id="s-leaks">Each way you could be exposed, and what closes it</h2>
+    </div>
+    <div class="guards">
+      <article class="guard">
+        <span class="risk">DNS leak</span>
+        <h3>Every lookup answered inside</h3>
+        <p>A query to port 53 of any address, even one with no resolver, is caught and answered by the server. The server asks over DNS‑over‑HTTPS (1.1.1.1, 8.8.8.8) through WARP.</p>
+        <span class="req">R‑vpn‑server‑03</span>
+      </article>
+      <article class="guard">
+        <span class="risk">IPv6 egress</span>
+        <h3>IPv6 does not exist here</h3>
+        <p>Turned off in the kernel with <code>ipv6.disable=1</code> from the first moment of boot. IPv6 destinations are blocked and AAAA lookups come back empty.</p>
+        <span class="req">R‑vpn‑server‑02 · ADR‑0004</span>
+      </article>
+      <article class="guard">
+        <span class="risk">DPI fingerprinting</span>
+        <h3>Indistinguishable from HTTPS</h3>
+        <p>Reality borrows a real site's TLS 1.3 handshake, so there is no certificate of its own to spot. Probes get the real site.</p>
+        <span class="req">R‑vpn‑server‑04 · ADR‑0003</span>
+      </article>
+      <article class="guard">
+        <span class="risk">Panel discovery</span>
+        <h3>Panel on loopback only</h3>
+        <p>3x‑ui listens on 127.0.0.1 and is reached through <code>ssh -L</code>. Only SSH and 443 are open to the internet.</p>
+        <span class="req">R‑vpn‑server‑05 · ADR‑0002</span>
+      </article>
+      <article class="guard">
+        <span class="risk">Exit through the VPS address</span>
+        <h3>Fails closed</h3>
+        <p>There is no direct outbound. If WARP is down, requests fail. They never fall back to the server's address, which Google places in Myanmar.</p>
+        <span class="req">R‑vpn‑server‑12 · ADR‑0008</span>
+      </article>
+      <article class="guard">
+        <span class="risk">Activity record</span>
+        <h3>Nothing to hand over</h3>
+        <p>Xray's access log and DNS log are off. Keys, tokens and the client link sit in root‑only files and never appear in script output.</p>
+        <span class="req">R‑vpn‑server‑06 · R‑vpn‑server‑09</span>
+      </article>
+    </div>
+  </section>
+
+  <section class="slide" aria-labelledby="s-host">
+    <div class="head">
+      <div class="eyebrow"><span class="n">05</span><span>The host</span></div>
+      <h2 id="s-host">A small, closed, self‑patching box</h2>
+    </div>
+    <div class="split">
+      <ul class="list">
+        <li><b>Firewall</b><span>ufw denies all incoming except SSH and 443/tcp.</span></li>
+        <li><b>Flood limits</b><span>Port 443: 1000 open connections or 100 new per second (burst 300) per address. SSH: 10 open or 30 per minute. SYN cookies on, backlog 4096.</span></li>
+        <li><b>SSH</b><span>Keys only, no root, no passwords. Unauthenticated connections drop after 30 s. fail2ban watches the rest.</span></li>
+        <li><b>Updates</b><span>unattended‑upgrades installs security fixes and reboots at 04:00 when one needs it.</span></li>
+        <li><b>Speed</b><span>BBR with fq pacing, 16 MB socket buffers, no slow start after idle. Tuned for the long path to your device.</span></li>
+      </ul>
+      <div class="nums" aria-label="Measured performance">
+        <div class="num"><span class="v">87<small>Mbit/s</small></span><span class="l">Through tunnel and WARP, measured on the server. 92 Mbit/s direct.</span></div>
+        <div class="num"><span class="v">37–48<small>Mbit/s</small></span><span class="l">Download on the owner's Mac through the VPN, after the move to Bangkok.</span></div>
+        <div class="num"><span class="v">1.4<small>ms</small></span><span class="l">From the VPS to Cloudflare Bangkok. The Singapore endpoint was 27 ms.</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="slide" aria-labelledby="s-ops">
+    <div class="head">
+      <div class="eyebrow"><span class="n">06</span><span>Operating it</span></div>
+      <h2 id="s-ops">Deploy, verify, repeat</h2>
+    </div>
+    <div class="ops">
+      <div class="op">
+        <h3>Harden</h3>
+        <p>Applies the SSH, firewall, fail2ban and SYN flood baseline.</p>
+        <div class="term">scripts/harden-vps.sh</div>
+      </div>
+      <div class="op">
+        <h3>Deploy</h3>
+        <p>Installs a pinned, checksummed 3x‑ui, registers WARP once and builds the inbound. Safe to re‑run: keys and link stay the same.</p>
+        <div class="term">scripts/deploy-vpn.sh</div>
+      </div>
+      <div class="op">
+        <h3>Verify</h3>
+        <p>Tests the live server from inside and from the internet. Each check maps to a requirement in the specs.</p>
+        <div class="term">scripts/verify-vpn.sh
+scripts/verify-external.sh
+scripts/verify-baseline.sh</div>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    Built from <span class="mono">specs/vpn-server</span>, <span class="mono">specs/vps-baseline</span> and ADR‑0002 to ADR‑0011. Measurements from 2026‑11‑10.
+  </footer>
+</main>
