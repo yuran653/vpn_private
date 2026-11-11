@@ -14,6 +14,8 @@ Format: `- Do not <approach>: <one-line reason>. (ADR-NNNN)`
 - Do not add a `freedom` outbound to the Xray template or route client traffic out from the server's own address: Google places that address in Myanmar, and a second way out leaks when WARP is down. (ADR-0008)
 - Do not serve a subscription to the client app through the tunnel at a reserved address, or otherwise expect Happ to fetch one through its own tunnel: the app fetches subscriptions outside it and the request times out. A subscription needs a public address, which ADR-0002 forbids. (ADR-0011)
 - Do not point the WARP tunnel at `162.159.192.1` (`engage.cloudflareclient.com`) or at `162.159.193.1`: from this host the first is answered in Singapore, 27 ms away, and the second passes no traffic. (ADR-0009)
+- Do not use a third-party site as the Reality cover site: its name does not match the VPS address, and relaying probes to it adds a round trip that gives the relay away. (ADR-0012)
+- Do not publish a Docker container port on a public address: Docker's firewall rules bypass ufw. Publish on `127.0.0.1` and put the host web server in front. (ADR-0012)
 
 ## Log
 
@@ -23,7 +25,7 @@ One row per decision record in this folder. Files are named `ADR-NNNN-<slug>.md`
 |---|---|---|---|
 | [ADR-0001](ADR-0001-stack.md) | Stack | accepted | 2026-11-10 |
 | [ADR-0002](ADR-0002-panel-on-loopback.md) | Panel on loopback, installed from a pinned release | accepted | 2026-11-10 |
-| [ADR-0003](ADR-0003-reality-cover-site.md) | Reality cover site | accepted | 2026-11-10 |
+| [ADR-0003](ADR-0003-reality-cover-site.md) | Reality cover site | superseded by ADR-0012 | 2026-11-10 |
 | [ADR-0004](ADR-0004-ipv6-off-in-kernel.md) | IPv6 disabled in the kernel, not by sysctl | accepted | 2026-11-10 |
 | [ADR-0005](ADR-0005-per-address-connection-limits.md) | Per-address connection limits in ufw's before-input chain | accepted | 2026-11-10 |
 | [ADR-0006](ADR-0006-automatic-reboot-after-updates.md) | Automatic reboot after updates that need one | accepted | 2026-11-10 |
@@ -32,4 +34,4 @@ One row per decision record in this folder. Files are named `ADR-NNNN-<slug>.md`
 | [ADR-0009](ADR-0009-warp-endpoint-in-bangkok.md) | WARP endpoint answered in Bangkok | accepted | 2026-11-10 |
 | [ADR-0010](ADR-0010-subscription-through-tunnel.md) | Subscription served through the tunnel | superseded by ADR-0011 | 2026-11-11 |
 | [ADR-0011](ADR-0011-no-subscription-name-in-the-link.md) | No subscription; the profile name travels in the client link | accepted | 2026-11-11 |
-| [ADR-0012](ADR-0012-own-domain-cover-site.md) | Cover site on the owner's own domain, served from the VPS | accepted, not deployed yet | 2026-11-12 |
+| [ADR-0012](ADR-0012-own-domain-cover-site.md) | Cover site on the owner's own domain, served from the VPS | accepted | 2026-11-12 |

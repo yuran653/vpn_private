@@ -177,7 +177,7 @@ a:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
   <header class="hero">
     <div class="eyebrow"><span>Personal VPS</span><span class="n">/</span><span>Thailand</span></div>
     <h1>One private road from your phone to the internet, by way of Bangkok</h1>
-    <p class="lede">A VLESS + XTLS‑Reality server on an Ubuntu VPS. To anyone watching the wire it looks like a visit to Samsung's website. Your traffic leaves through Cloudflare WARP in Thailand, and the server closes every leak it can control: DNS, IPv6, fingerprinting and panel discovery.</p>
+    <p class="lede">A VLESS + XTLS‑Reality server on an Ubuntu VPS. To anyone watching the wire it looks like a visit to a small website that the server really hosts. Your traffic leaves through Cloudflare WARP in Thailand, and the server closes every leak it can control: DNS, IPv6, fingerprinting and panel discovery.</p>
     <div class="facts">
       <span class="chip">Xray via 3x‑ui</span>
       <span class="chip">VLESS · XTLS‑Vision · Reality</span>
@@ -192,7 +192,7 @@ a:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
       <div class="eyebrow"><span class="n">01</span><span>The path</span></div>
       <h2 id="s-path">Four stops, one way out</h2>
     </div>
-    <div class="diagram" role="img" aria-label="Diagram: your device connects over Reality on TCP 443 to the VPS in Thailand, which forwards everything through a WireGuard tunnel to Cloudflare's Bangkok site, which reaches the website. The ISP sees only TLS to www.samsung.com. A probe without the key is handed to the real www.samsung.com.">
+    <div class="diagram" role="img" aria-label="Diagram: your device connects over Reality on TCP 443 to the VPS in Thailand, which forwards everything through a WireGuard tunnel to Cloudflare's Bangkok site, which reaches the website. The ISP sees only TLS to status.casedigestai.com. A probe without the key gets the website the server hosts under that name.">
       <svg viewBox="0 0 1000 350" xmlns="http://www.w3.org/2000/svg">
         <defs>
           <marker id="ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
@@ -203,7 +203,7 @@ a:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
         <!-- observer over link 1 -->
         <rect x="150" y="12" width="190" height="56" rx="8" class="d-note"/>
         <text x="162" y="34" class="d-title" style="font-size:13px">Your ISP / Wi‑Fi sees</text>
-        <text x="162" y="54" class="d-mono">TLS 1.3 → www.samsung.com</text>
+        <text x="162" y="54" class="d-mono">TLS 1.3 → status.casedigestai.com</text>
         <path d="M240 68 V150" class="d-dash"/>
 
         <!-- links -->
@@ -246,7 +246,7 @@ a:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
         <path d="M375 230 V290 H560" class="d-dash" marker-end="url(#ah)"/>
         <text x="388" y="266" class="d-mono">probe without key</text>
         <rect x="565" y="270" width="230" height="44" rx="8" class="d-note"/>
-        <text x="580" y="297" class="d-mono" style="fill:var(--ink)">real www.samsung.com:443</text>
+        <text x="580" y="297" class="d-mono" style="fill:var(--ink)">own site, served on the VPS</text>
       </svg>
     </div>
     <div class="legend">
@@ -265,12 +265,12 @@ a:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
       <article class="step">
         <span class="k">1 · Device</span>
         <h3>Looks like a Chrome visit</h3>
-        <p>Happ opens TCP 443 to the VPS and sends a TLS 1.3 hello with Chrome's fingerprint and the name <code>www.samsung.com</code>. Your traffic rides inside, split by XTLS‑Vision so its shape does not stand out.</p>
+        <p>Happ opens TCP 443 to the VPS and sends a TLS 1.3 hello with Chrome's fingerprint and the name <code>status.casedigestai.com</code>. Your traffic rides inside, split by XTLS‑Vision so its shape does not stand out.</p>
       </article>
       <article class="step">
         <span class="k">2 · Reality</span>
         <h3>Key or cover site</h3>
-        <p>The server checks the hello for the client's short ID and X25519 key. With it, the tunnel opens. Without it, the connection is passed through to the real Samsung site, valid certificate and all.</p>
+        <p>The server checks the hello for the client's short ID and X25519 key. With it, the tunnel opens. Without it, the connection is handed to the web server on the same VPS, which shows the site's landing page with its own valid certificate (ADR-0012).</p>
       </article>
       <article class="step">
         <span class="k">3 · Routing</span>
@@ -337,10 +337,10 @@ colo=BKK   <span class="c"># R-vpn-server-12.f</span></div>
         <thead><tr><th scope="col">Observer</th><th scope="col">Sees</th><th scope="col">Does not see</th></tr></thead>
         <tbody>
           <tr><th scope="row">Your ISP or Wi‑Fi</th>
-            <td class="sees"><i class="dot no"></i>A TLS 1.3 connection to a Thai host named <span class="mono">www.samsung.com</span></td>
+            <td class="sees"><i class="dot no"></i>A TLS 1.3 connection to a Thai host named <span class="mono">status.casedigestai.com</span></td>
             <td class="hidden"><i class="dot ok"></i>Sites you visit, your DNS lookups, that it is a VPN</td></tr>
           <tr><th scope="row">A censor probing :443</th>
-            <td class="sees"><i class="dot no"></i>Samsung's real certificate and web page</td>
+            <td class="sees"><i class="dot no"></i>The site's own certificate and landing page</td>
             <td class="hidden"><i class="dot ok"></i>Any sign of a proxy; the panel (closed to the internet)</td></tr>
           <tr><th scope="row">The VPS provider</th>
             <td class="sees"><i class="dot no"></i>Encrypted traffic in from you, WireGuard UDP out to Cloudflare</td>

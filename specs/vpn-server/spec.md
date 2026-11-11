@@ -4,7 +4,7 @@
 
 ## Purpose
 
-A VLESS + XTLS-Reality VPN server on the VPS for the owner's devices, deployed by `scripts/deploy-vpn.sh`, that prevents the identity disclosures a server can enforce: IPv6 egress, DNS leaks, tunnel fingerprinting and panel discovery.
+A VLESS + XTLS-Reality VPN server on the VPS for the owner's devices, deployed by `scripts/deploy-vpn.sh` together with the website that covers it, that prevents the identity disclosures a server can enforce: IPv6 egress, DNS leaks, tunnel fingerprinting and panel discovery.
 
 The verify scripts test the deployed server over the live network. `verified` means the named check fails when the criterion is violated on the VPS.
 
@@ -43,28 +43,34 @@ DNS queries arriving through the tunnel are answered by the server, and the serv
 
 ### R-vpn-server-04: Probe resistance
 
-A party without the client key cannot tell the VPN port from an ordinary HTTPS site.
+A party without the client key cannot tell the VPN port from the website the server's name and address belong to, and the server answers that party itself.
 
-- **R-vpn-server-04.a** [verified] WHEN a TLS client without the key connects to port 443 with the cover site's name THEN it receives the cover site's valid certificate and an HTTP answer from that site.
+- **R-vpn-server-04.a** [verified] WHEN a TLS client without the key connects to port 443 with the name `status.casedigestai.com` THEN it receives a publicly trusted certificate for that name and the landing page.
   Test: `scripts/verify-external.sh` (R-vpn-server-04.a), `scripts/verify-vpn.sh` (R-vpn-server-04.a)
+- **R-vpn-server-04.b** [verified] WHEN a TLS client without the key connects to port 443 with the name `casedigestai.com`, or with no name, THEN it receives the same site's certificate, not a connection reset.
+  Test: `scripts/verify-external.sh` (R-vpn-server-04.b), `scripts/verify-vpn.sh` (R-vpn-server-04.b)
+- **R-vpn-server-04.c** [verified] WHEN the running proxy configuration is inspected THEN connections without the key are handed to a web server on the same host, so answering a probe opens no connection to another host.
+  Test: `scripts/verify-vpn.sh` (R-vpn-server-04.c)
 
 ### R-vpn-server-05: Panel not discoverable
 
-The management panel and its subscription service cannot be found or reached from the internet.
+The management panel, its subscription service and the site's content server cannot be found or reached from the internet.
 
-- **R-vpn-server-05.a** [verified] WHEN the host's listening sockets are listed THEN only SSH and port 443 listen on a public address, apart from the UDP socket the proxy holds open to send its WARP tunnel traffic.
+- **R-vpn-server-05.a** [verified] WHEN the host's listening sockets are listed THEN only SSH, port 80 and port 443 listen on a public address, apart from the UDP socket the proxy holds open to send its WARP tunnel traffic.
   Test: `scripts/verify-vpn.sh` (R-vpn-server-05.a)
-- **R-vpn-server-05.b** [verified] WHEN a host on the internet connects to the panel port, or to the usual panel and subscription ports, THEN the connection is not accepted.
+- **R-vpn-server-05.b** [verified] WHEN a host on the internet connects to the panel port, to the usual panel and subscription ports, or to the ports the web server and the site container use on loopback, THEN the connection is not accepted.
   Test: `scripts/verify-external.sh` (R-vpn-server-05.b)
-- **R-vpn-server-05.c** [verified] WHEN the firewall rules are listed THEN incoming traffic is denied except SSH and 443/tcp.
+- **R-vpn-server-05.c** [verified] WHEN the firewall rules are listed THEN incoming traffic is denied except SSH, 80/tcp and 443/tcp.
   Test: `scripts/verify-vpn.sh` (R-vpn-server-05.c)
 
 ### R-vpn-server-06: No client activity record
 
-The server keeps no record of which client connected to which destination.
+The server keeps no record of which client connected to which destination, and none of who visited the site.
 
 - **R-vpn-server-06.a** [verified] WHEN the running proxy configuration is inspected THEN the access log and the DNS log are off.
   Test: `scripts/verify-vpn.sh` (R-vpn-server-06.a)
+- **R-vpn-server-06.b** [verified] WHEN the web server and the site container are inspected THEN neither writes an access log.
+  Test: `scripts/verify-vpn.sh` (R-vpn-server-06.b)
 
 ### R-vpn-server-07: Unattended security updates
 
@@ -136,9 +142,37 @@ Everything a client sends through the tunnel leaves the server through Cloudflar
 
 ### R-vpn-server-14: Client link names the server
 
-The client link names the profile `กรุงเทพฯ cloud.z.com`.
+The client link names the profile `กรุงเทพฯ cloud.z.com` and the cover name `status.casedigestai.com`.
 
 - **R-vpn-server-14.a** [verified] WHEN the client link is read THEN the name after `#` is `กรุงเทพฯ cloud.z.com`.
   Test: `scripts/verify-vpn.sh` (R-vpn-server-14.a)
-- **R-vpn-server-14.b** [untested: no automated test; the hash of the client ID in the link was compared before and after the run] WHEN the deploy script runs on a host that already has the link THEN the key in the link (client ID, public key, short ID) is unchanged.
+- **R-vpn-server-14.b** [untested: no automated test; a hash of the client ID, public key and short ID in the link was compared before and after the 2026-11-12 deploy] WHEN the deploy script runs on a host that already has the link THEN the key in the link (client ID, public key, short ID) is unchanged.
   Test: none
+- **R-vpn-server-14.c** [verified] WHEN the client link is read THEN its `sni` is `status.casedigestai.com`.
+  Test: `scripts/verify-vpn.sh` (R-vpn-server-14.c)
+
+### R-vpn-server-15: Cover site on the owner's domain
+
+The server is the website of `casedigestai.com` and `status.casedigestai.com`: both names resolve to it, and it answers both with a valid certificate and the landing page.
+
+- **R-vpn-server-15.a** [verified] WHEN `casedigestai.com` and `status.casedigestai.com` are resolved from the internet THEN each resolves to the server's address and to no other.
+  Test: `scripts/verify-external.sh` (R-vpn-server-15.a)
+- **R-vpn-server-15.b** [verified] WHEN a browser opens `https://casedigestai.com` or `https://status.casedigestai.com` THEN it receives a publicly trusted certificate that names that host and a page containing "CaseDigest AI".
+  Test: `scripts/verify-external.sh` (R-vpn-server-15.b)
+- **R-vpn-server-15.c** [verified for the page itself; the favicon file it loads is not inspected] WHEN the landing page and everything it loads are inspected THEN no URL points to another host, and the page has no form and no script.
+  Test: `scripts/verify-external.sh` (R-vpn-server-15.c)
+- **R-vpn-server-15.d** [verified] WHEN the landing page is read THEN it mentions neither a VPN nor Thailand.
+  Test: `scripts/verify-external.sh` (R-vpn-server-15.d)
+- **R-vpn-server-15.e** [verified] WHEN a client requests `http://` on port 80 for either name THEN it is redirected to the same path on `https://` of that name.
+  Test: `scripts/verify-external.sh` (R-vpn-server-15.e)
+
+### R-vpn-server-16: Certificate renews unattended
+
+The site certificate is renewed without an operator.
+
+- **R-vpn-server-16.a** [verified] WHEN the host's timers are inspected THEN the certificate renewal timer is enabled and active.
+  Test: `scripts/verify-vpn.sh` (R-vpn-server-16.a)
+- **R-vpn-server-16.b** [verified] WHEN a renewal is rehearsed against the certificate authority's staging service THEN it succeeds.
+  Test: `scripts/verify-vpn.sh` (R-vpn-server-16.b)
+- **R-vpn-server-16.c** [verified] WHEN the served certificate is inspected THEN it is valid for more than 20 days.
+  Test: `scripts/verify-vpn.sh` (R-vpn-server-16.c)

@@ -1,9 +1,9 @@
 # ADR-0012: Cover site on the owner's own domain, served from the VPS
 
-- Status: accepted (the owner approved the proposal on 2026-11-12; not deployed yet)
+- Status: accepted
 - Date: 2026-11-12
 - Supersedes: ADR-0003
-- Change: `changes/serve-own-cover-site/`
+- Change: `changes/archive/2026-11-12-serve-own-cover-site/`
 
 ## Context
 
@@ -41,7 +41,7 @@ The cover site is the owner's own site, served by the VPS itself.
 
 - The name, the address, the certificate and the page now agree. A probe sees an ordinary small site answered locally, with no relay delay.
 - The names are public: DNS and the certificate transparency log tie `casedigestai.com` to the VPS address. If the address is blocked, the domain is known to the censor too, and a new address needs new DNS records.
-- The 2026-11-12 block followed a domain link. If that link was the cause, this change can trigger the same block. [TODO-CLARIFY: is the server on a new address now, and was `casedigestai.com` the domain linked on 2026-11-12?]
+- The 2026-11-12 block followed a domain link. If that link was the cause, this change can trigger the same block. Both names resolved to the server address before the deploy, and the VPN worked on Wi-Fi and mobile data after it. [TODO-CLARIFY: was `casedigestai.com` the domain linked on 2026-11-12, and is the server on a new address since then?]
 - The server now runs a web server, certbot and Docker, which are more software to keep patched. Port 80 is a second public TCP port besides SSH and 443.
 - If certificate renewal fails for 90 days, probes see an expired certificate. The tunnel itself keeps working, because Reality clients do not validate that certificate.
 - Changing the cover name changes the client link once. Every device imports the new link.
@@ -49,3 +49,4 @@ The cover site is the owner's own site, served by the VPS itself.
 ## Do not
 
 - Do not use a third-party site as the Reality cover site: its name does not match the VPS address, and relaying probes to it adds a round trip that gives the relay away. (ADR-0012)
+- Do not publish a Docker container port on a public address: Docker's firewall rules bypass ufw. Publish on `127.0.0.1` and put the host web server in front. (ADR-0012)

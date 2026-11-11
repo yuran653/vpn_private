@@ -64,6 +64,16 @@ ssh zcom-th 'sudo -n sh -c "nohup bash /tmp/deploy-vpn.sh > /root/vpn/deploy-run
 ssh zcom-th 'sudo -n tail /root/vpn/deploy-run.log'      # repeat until it prints "[deploy] done"
 ```
 
+## Cover site
+
+The server is the website of `casedigestai.com` and `status.casedigestai.com` (ADR-0012). A connection to port 443 without the client key gets that site.
+
+- nginx on the host answers on port 80 (certificate challenge, redirect to HTTPS) and on `127.0.0.1:8443` with the Let's Encrypt certificate. Its config, `/etc/nginx/conf.d/cover-site.conf`, is written by `deploy-vpn.sh`.
+- The pages come from a Docker container in `/opt/cover-site`, published on `127.0.0.1:8080` only. The source is the repo's `site/` folder; change the page there and re-run the deploy script.
+- The certificate renews through `certbot.timer`. `scripts/verify-vpn.sh` rehearses a renewal (R-vpn-server-16.b).
+- The inbound as it was before the last change is in `/root/vpn/inbound-previous.json`, root-only.
+- Neither nginx nor the container keeps an access log.
+
 ## Updates and reboots
 
 Security updates install every night without an operator. When one needs a reboot, the host reboots itself at 04:00 Asia/Bangkok (ADR-0006); VPN connections drop for about a minute. One address may hold 1000 connections to port 443 and open 100 per second (ADR-0005).
@@ -84,7 +94,7 @@ Client traffic does not leave from the server's own address. The deploy script r
 
 ## What the server does not defend against
 
-A volumetric DDoS fills the uplink before the firewall sees a packet. Only the provider can absorb it, and Reality cannot sit behind a CDN. The practical recovery is a new IP address from the provider, then a re-run of `deploy-vpn.sh` to rewrite the client link.
+A volumetric DDoS fills the uplink before the firewall sees a packet. Only the provider can absorb it, and Reality cannot sit behind a CDN. The practical recovery is a new IP address from the provider, then the A records of `casedigestai.com` and `status.casedigestai.com` changed to it, then a re-run of `deploy-vpn.sh` to rewrite the client link. The deploy script stops before it touches the tunnel while either name still resolves elsewhere.
 
 Secrets stay on the VPS, readable by root only:
 
