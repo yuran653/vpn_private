@@ -5,7 +5,7 @@ Ordered. Each task touches one to three files and has its own check. Tick a task
 - [x] 1. Write ADR-0012, the proposal, the delta and this design (files: `docs/decisions/ADR-0012-own-domain-cover-site.md`, `changes/serve-own-cover-site/`)
   Check: the owner approves the proposal.
 - [x] 2. Build the landing page and the container definition (files: `site/html/index.html`, `site/docker-compose.yml`, `site/nginx.conf`; criteria: R-vpn-server-15.c, .d)
-  Check: the page opens locally in light and dark mode at phone width with no network request (done 2026-11-12); the owner approves the preview (pending).
+  Check: the page opens locally in light and dark mode at phone width with no network request (done 2026-11-12); the owner approved the preview (2026-11-12).
 - [x] 3. Add nginx, certbot, Docker and port 80 to the deploy script (files: `scripts/deploy-vpn.sh`; criteria: R-vpn-server-05, -06.b, -15, -16)
   Check: `bash -n` passes. `shellcheck` is not installed on the workstation; not run.
 - [x] 4. Point Reality at the local web server and set the cover name (files: `scripts/deploy-vpn.sh`; criteria: R-vpn-server-04, -14)
