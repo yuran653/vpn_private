@@ -1,6 +1,6 @@
 # ADR-0018: A second transport that does not pass through Cloudflare
 
-- Status: accepted
+- Status: accepted; the second server's own WARP exit superseded by ADR-0019
 - Date: 2026-11-12
 - Supersedes: ADR-0013 in part (the "CDN only" choice and its first "Do not" line) and ADR-0012 in part (its "Do not" line on a third-party Reality cover site, for the second server only)
 - Change: none yet

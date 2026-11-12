@@ -6,7 +6,10 @@
 # verifies (specs/vps-baseline/spec.md). Changes nothing on the host.
 #
 # Usage:
-#   sudo -n bash verify-baseline.sh
+#   sudo -n bash verify-baseline.sh [--ssh-from <addr>[,<addr>...]]
+#
+# Pass --ssh-from with the same list as harden-vps.sh got; without it the SSH
+# port is expected to be admitted from anywhere.
 #
 # Exit code 0 only when every check passes. Prints no secret.
 
@@ -42,6 +45,29 @@ if printf '%s\n' "$ssh_rules" | grep -q -- '--connlimit-above 10 --connlimit-mas
     pass R-vps-baseline-06.a "per-address connection limits are loaded on ${ssh_port}/tcp"
 else
     fail R-vps-baseline-06.a "per-address connection limits are missing on ${ssh_port}/tcp"
+fi
+
+# R-vps-baseline-08.a, .c and .d: the SSH port is admitted from exactly the
+# listed sources, or from anywhere when no list was asked for.
+ssh_sources=$(ufw status | awk -v p="${ssh_port}/tcp" '$1 == p && $2 == "ALLOW" {print $3}' | sort -u | tr '\n' ' ')
+if [ "${1:-}" = --ssh-from ]; then
+    want=$(python3 -I -c '
+import ipaddress, sys
+out = []
+for item in sys.argv[1].split(","):
+    net = ipaddress.IPv4Network(item.strip(), strict=True)
+    out.append(str(net.network_address) if net.prefixlen == 32 else str(net))
+print(" ".join(sorted(set(out))) + " ")
+' "${2:-}" 2>/dev/null)
+    if [ -n "$want" ] && [ "$ssh_sources" = "$want" ]; then
+        pass R-vps-baseline-08.a "${ssh_port}/tcp is admitted from the listed sources only"
+    else
+        fail R-vps-baseline-08.a "${ssh_port}/tcp is admitted from '${ssh_sources% }', not exactly the list"
+    fi
+elif [ "$ssh_sources" = "Anywhere " ]; then
+    pass R-vps-baseline-08.c "${ssh_port}/tcp is admitted from anywhere (no list asked for)"
+else
+    fail R-vps-baseline-08.c "${ssh_port}/tcp is admitted from '${ssh_sources% }', expected anywhere"
 fi
 
 # R-vps-baseline-07.a: SYN cookies are on and the SYN backlog holds at least 4096.
