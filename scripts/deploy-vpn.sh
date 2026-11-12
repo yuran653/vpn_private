@@ -590,7 +590,9 @@ EOF
     if [ -n "${1:-}" ]; then
         cat >> "$work/cover-site.conf" <<EOF
 server {
-    listen $1 ssl http2 default_server;
+    # No http2 here (ADR-0015): only Cloudflare connects, and a listener with http2 answers
+    # an HTTP/1.1 tunnel client with raw HTTP/2 frames.
+    listen $1 ssl default_server;
     server_name ${SITE_NAMES[*]};
     server_tokens off;
     access_log off;
@@ -603,10 +605,14 @@ server {
     location ^~ $xhttp_path {
         client_max_body_size 0;
         client_body_timeout 5m;
-        grpc_pass grpc://127.0.0.1:$XHTTP_PORT;
-        grpc_read_timeout 5m;
-        grpc_send_timeout 5m;
-        grpc_socket_keepalive on;
+        # proxy_pass over HTTP/1.1 (ADR-0015): the link offers HTTP/1.1 only.
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_buffering off;
+        proxy_request_buffering off;
+        proxy_read_timeout 5m;
+        proxy_send_timeout 5m;
+        proxy_pass http://127.0.0.1:$XHTTP_PORT;
     }
     location / {
         proxy_pass http://127.0.0.1:$COVER_SITE_PORT;
@@ -795,7 +801,8 @@ if grep -qxF "# BEGIN $LIMITS_MARKER" "$UFW_BEFORE"; then
 fi
 log "80/tcp and ${VPN_PORT}/tcp closed to everyone but Cloudflare"
 
-# 9. Client link, built from what the panel stores. It names the host, not the
+# 9. Client link, built from what the panel stores. Its fingerprint is `android`
+#    because the browser fingerprints offer h2 whatever the ALPN says (ADR-0015). It names the host, not the
 #    address: the client reaches Cloudflare, which reaches this server.
 #    Written to a root-only file.
 api_ok "read inbound" "panel/api/inbounds/get/$xhttp_id" | jq -r \
@@ -805,7 +812,7 @@ api_ok "read inbound" "panel/api/inbounds/get/$xhttp_id" | jq -r \
     | ($in.settings | if type == "string" then fromjson else . end) as $s
     | ($in.streamSettings | if type == "string" then fromjson else . end) as $st
     | ($s.clients[] | select(.email == $email)) as $c
-    | "vless://\($c.id)@\($host):\($port)?encryption=none&security=tls&sni=\($host)&fp=chrome&alpn=h2%2Chttp%2F1.1&type=xhttp&host=\($host)&path=\($st.xhttpSettings.path | @uri)&mode=auto&extra=\({xPaddingBytes: $padding, xmux: $xmux} | tojson | @uri)#\($name | @uri)"' \
+    | "vless://\($c.id)@\($host):\($port)?encryption=none&security=tls&sni=\($host)&fp=android&alpn=http%2F1.1&type=xhttp&host=\($host)&path=\($st.xhttpSettings.path | @uri)&mode=auto&extra=\({xPaddingBytes: $padding, xmux: $xmux} | tojson | @uri)#\($name | @uri)"' \
     > "$LINK_FILE"
 chmod 600 "$LINK_FILE"
 grep -q '^vless://' "$LINK_FILE" || die "client link was not written"

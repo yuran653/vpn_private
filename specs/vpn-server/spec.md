@@ -186,3 +186,14 @@ A client using the link spreads a long stretch of use over many short connection
   Test: none
 - **R-vpn-server-18.c** [verified] WHEN the running proxy configuration is inspected THEN the tunnel inbound pads its responses with 100 to 1000 bytes.
   Test: `scripts/verify-vpn.sh` (R-vpn-server-18.c)
+
+### R-vpn-server-19: The tunnel works over HTTP/1.1
+
+The client link offers HTTP/1.1 only, and the tunnel carries traffic whether the client speaks HTTP/1.1 or HTTP/2.
+
+- **R-vpn-server-19.a** [verified] WHEN the client link is read THEN its ALPN is `http/1.1` alone and its TLS fingerprint is `android`, which offers no HTTP/2 of its own.
+  Test: `scripts/verify-vpn.sh` (R-vpn-server-19.a)
+- **R-vpn-server-19.b** [verified] WHEN a client that offers only HTTP/1.1 opens a connection through the tunnel THEN traffic passes and the exit is Cloudflare WARP.
+  Test: `scripts/verify-vpn.sh` (R-vpn-server-19.b); the exit address is checked to be an IPv4 address that is not the server's own, and R-vpn-server-12.a checks WARP for the main client
+- **R-vpn-server-19.c** [verified] WHEN a client that offers only HTTP/2 opens a connection through the tunnel THEN traffic passes.
+  Test: `scripts/verify-vpn.sh` (R-vpn-server-19.c)
