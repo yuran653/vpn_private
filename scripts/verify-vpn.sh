@@ -15,6 +15,9 @@
 set -uo pipefail
 
 readonly LINK_FILE=/root/vpn/vless-link.txt
+# The fallback server's own client and its link (ADR-0019, R-vpn-server-22).
+readonly RELAY_LINK_FILE=/root/vpn/relay-link.txt
+readonly RELAY_PORT=10813
 readonly XRAY=/usr/local/x-ui/bin/xray-linux-amd64
 readonly XRAY_CONFIG=/usr/local/x-ui/bin/config.json
 readonly SOCKS_PORT=10808
@@ -287,6 +290,43 @@ for pin in "19.b $H1_PORT http/1.1 android" "19.c $H2_PORT h2 chrome"; do
         fail "R-vpn-server-$1" "a client offering only $3 got '${seen:-nothing}' through the tunnel"
     fi
 done
+
+# R-vpn-server-22.a: the tunnel inbound has two clients with different IDs, the
+# owner's and the fallback server's.
+check R-vpn-server-22.a "the tunnel inbound has the clients owner and relay, with different IDs" \
+    jq -e '[.inbounds[] | select(.streamSettings.network == "xhttp") | .settings.clients[]]
+        | (map(.email) | sort) == ["owner", "relay"] and (map(.id) | unique | length) == 2' "$XRAY_CONFIG"
+
+# R-vpn-server-22.b: a client using the relay link leaves through WARP in
+# Thailand. The client is the main one with the relay link's ID in place of the
+# owner's; the ID is read from the file, never passed on a command line.
+if [ -r "$RELAY_LINK_FILE" ]; then
+    python3 -I - "$work/client.json" "$RELAY_LINK_FILE" "$RELAY_PORT" > "$work/client-relay.json" <<'PY'
+import json, sys, urllib.parse
+config = json.load(open(sys.argv[1]))
+relay = urllib.parse.urlsplit(open(sys.argv[2]).read().strip())
+config["inbounds"][0]["port"] = int(sys.argv[3])
+config["outbounds"][0]["settings"]["vnext"][0]["users"][0]["id"] = relay.username
+print(json.dumps(config))
+PY
+    "$XRAY" run -c "$work/client-relay.json" > "$work/client-relay.log" 2>&1 &
+    extra_pids="$extra_pids $!"
+    for _ in $(seq 1 10); do ss -Htln "sport = :$RELAY_PORT" | grep -q . && break; sleep 1; done
+    relay_trace=$(curl -s --max-time 20 --socks5-hostname "127.0.0.1:$RELAY_PORT" https://www.cloudflare.com/cdn-cgi/trace)
+    relay_warp=$(printf '%s\n' "$relay_trace" | sed -n 's/^warp=//p')
+    relay_loc=$(printf '%s\n' "$relay_trace" | sed -n 's/^loc=//p')
+    case "$relay_warp $relay_loc" in
+        "on TH"|"plus TH") pass R-vpn-server-22.b "a client with the relay link leaves through WARP in Thailand" ;;
+        *) fail R-vpn-server-22.b "a client with the relay link got warp='${relay_warp:-no answer}' loc='${relay_loc:-unknown}'" ;;
+    esac
+else
+    fail R-vpn-server-22.b "no relay link at $RELAY_LINK_FILE"
+fi
+
+# R-vpn-server-22.d (file half): the relay link is readable by root only.
+[ "$(stat -c '%a %U' "$RELAY_LINK_FILE" 2>/dev/null)" = "600 root" ] \
+    && pass R-vpn-server-22.d "the relay link file is readable by root only" \
+    || fail R-vpn-server-22.d "the relay link file is missing or readable by others"
 
 # R-vpn-server-17.a (inside half): the link names the cover name, not an
 # address, and that name resolves to Cloudflare's ranges only.
