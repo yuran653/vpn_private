@@ -61,12 +61,12 @@ bash scripts/verify-external.sh
 
 After ADR-0015 the client link carries `alpn=http/1.1` and `fp=android` and nginx passes the tunnel path with `proxy_pass`. A re-run of the deploy script rewrites the link file; every device must import the new link. The earlier link (`h2,http/1.1`) keeps working where HTTP/2 is not blocked.
 
-If the deploy script prints `REBOOT NEEDED`, reboot the VPS once and run both verify scripts again.
+If the deploy script prints `REBOOT NEEDED`, reboot the VPS once and run both verify scripts again. The reboot empties `/tmp`, so copy `verify-vpn.sh` to the VPS again first.
 
-The deploy script also installs pending security updates, which takes several minutes on a fresh image. Start it detached, so a dropped SSH session cannot interrupt it. The script restarts Xray, which drops an SSH session that itself travels through this VPN:
+The deploy script also installs pending security updates, which takes several minutes on a fresh image. Start it detached, so a dropped SSH session cannot interrupt it. The script restarts Xray, which drops an SSH session that itself travels through this VPN. The command creates `/root/vpn` first, because on a fresh host the folder for the run log does not exist until the script has started:
 
 ```bash
-ssh zcom-th 'sudo -n sh -c "nohup bash /tmp/deploy-vpn.sh > /root/vpn/deploy-run.log 2>&1 &"'
+ssh zcom-th 'sudo -n sh -c "install -d -m 700 /root/vpn && nohup bash /tmp/deploy-vpn.sh > /root/vpn/deploy-run.log 2>&1 &"'
 ssh zcom-th 'sudo -n tail /root/vpn/deploy-run.log'      # repeat until it prints "[deploy] done"
 ```
 
@@ -141,9 +141,5 @@ Expected: the hostname, a country, kernel `6.x`. Since 2026-11-10 `ifconfig.co` 
 
 ## Replacing the domain
 
-`casedigestai.com` is on `docs/blocked-names.txt` (blocked on Russian mobile networks, 2026-11-12), so the site and the link have to move to a new domain (ADR-0017). Order:
-
-1. Choose a domain used for nothing else.
-2. From a phone on mobile data in each target country, with no VPN, run `bash scripts/check-name.sh <name>` for the name that will carry the tunnel. Only a pass (exit 0) lets it go on; exit 2 means that network cannot judge it. The name must resolve through Cloudflare for the check to mean anything, so put the zone on Cloudflare (proxied, "Full (strict)") first.
-3. Change the names in `scripts/deploy-vpn.sh`, `scripts/verify-vpn.sh`, `scripts/verify-external.sh`, `site/docker-compose.yml`, `site/html/index.html`, `docs/how-it-works.html` and the spec, then run the deploy and both verify scripts. Every device imports the new link.
+`casedigestai.com` is on `docs/blocked-names.txt` (blocked on Russian mobile networks, 2026-11-12), so the site and the link have to move to a new domain (ADR-0017). The order is in `docs/redeploy.md`, steps 1 to 3 and 8 to 12. The name check (`scripts/check-name.sh`, from a phone on mobile data in each target country) runs after the deploy and before any device gets the link: it fails a name that has no server answering behind it.
 
