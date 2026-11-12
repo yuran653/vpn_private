@@ -25,6 +25,9 @@ Format: `- Do not <approach>: <one-line reason>. (ADR-NNNN)`
 - Do not hand out the direct Reality link as the default link: the user's ISP then sees a hosting provider's address (flag 2). It is the fallback for networks where the Cloudflare link fails. (ADR-0018)
 - Do not let the second server take clients while its SSH port is open to everyone: its address is visible to every client's ISP and to probes. (ADR-0018)
 - Do not give the fallback server a way out of its own (a `freedom` outbound, or its own WARP tunnel): its users would exit outside Thailand, and a second way out leaks when the first server is unreachable. It forwards to the first server only. (ADR-0019)
+- Do not admit 2053, 2083, 2087, 2096 or 8443 from outside Cloudflare's published ranges, and do not put the panel or any other service on them: nginx holds them for the site and the tunnel. (ADR-0020)
+- Do not turn ECH on for the zone or put an ECH setting in a client link: Cloudflare's ECH is blocked in Russia, and encrypted server names are blocked in China. (ADR-0021)
+- Do not use a site name that contains a word from `docs/avoided-name-words.txt`: censors match names by keyword. (ADR-0021)
 
 ## Log
 
@@ -50,3 +53,5 @@ One row per decision record in this folder. Files are named `ADR-NNNN-<slug>.md`
 | [ADR-0017](ADR-0017-vet-names-before-use.md) | Names are tried from a mobile network before use, and blocked names are listed | accepted | 2026-11-12 |
 | [ADR-0018](ADR-0018-second-transport-outside-cloudflare.md) | A second transport that does not pass through Cloudflare | accepted; the second server's own WARP exit superseded by ADR-0019 | 2026-11-12 |
 | [ADR-0019](ADR-0019-fallback-relays-to-first-server.md) | The fallback server is an entry only and relays to the first server | accepted | 2026-11-12 |
+| [ADR-0020](ADR-0020-alternative-cloudflare-ports.md) | The tunnel answers on Cloudflare's other HTTPS ports too | accepted | 2026-11-12 |
+| [ADR-0021](ADR-0021-protect-the-name.md) | Measures that keep the name from being flagged | accepted | 2026-11-12 |

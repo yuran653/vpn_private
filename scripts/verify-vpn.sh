@@ -25,6 +25,11 @@ readonly SOCKS_PORT=10808
 readonly H1_PORT=10811
 readonly H2_PORT=10812
 readonly VPN_PORT=443
+# The other HTTPS ports Cloudflare proxies (ADR-0020), their links, and the
+# first loopback port of the test clients that use them.
+readonly ALT_PORTS=(2053 2083 2087 2096 8443)
+readonly ALT_LINKS_FILE=/root/vpn/vless-links-alt.txt
+readonly ALT_SOCKS_BASE=10820
 readonly XHTTP_PORT=10443
 readonly CF_IPS_FILE=/root/vpn/cloudflare-ips-v4.txt
 readonly COVER_DOMAIN=casedigestai.com
@@ -291,6 +296,77 @@ for pin in "19.b $H1_PORT http/1.1 android" "19.c $H2_PORT h2 chrome"; do
     fi
 done
 
+# R-vpn-server-23.a (inside half): nginx answers as the site on every
+# alternative port (ADR-0020).
+missing=""
+for p in "${ALT_PORTS[@]}"; do
+    body=$(curl -s --max-time 15 --resolve "$COVER_NAME:$p:127.0.0.1" "https://$COVER_NAME:$p/")
+    printf '%s' "$body" | grep -qF "$COVER_PAGE_TEXT" || missing="$missing $p"
+done
+[ -z "$missing" ] \
+    && pass R-vpn-server-23.a "the site answers on every alternative port: ${ALT_PORTS[*]}" \
+    || fail R-vpn-server-23.a "the site does not answer on:$missing"
+
+# R-vpn-server-23.b: a client that uses an alternative port gets a working
+# tunnel. Each client is the main one with the port changed.
+broken=""
+n=0
+for p in "${ALT_PORTS[@]}"; do
+    socks=$((ALT_SOCKS_BASE + n)); n=$((n + 1))
+    jq --argjson socks "$socks" --argjson p "$p" '.inbounds[0].port = $socks
+        | .outbounds[0].settings.vnext[0].port = $p' "$work/client.json" > "$work/client-alt-$p.json"
+    "$XRAY" run -c "$work/client-alt-$p.json" > "$work/client-alt-$p.log" 2>&1 &
+    extra_pids="$extra_pids $!"
+    for _ in $(seq 1 10); do ss -Htln "sport = :$socks" | grep -q . && break; sleep 1; done
+    seen=$(curl -s --max-time 20 --socks5-hostname "127.0.0.1:$socks" https://api.ipify.org)
+    if ! is_ipv4 "$seen" || [ "$seen" = "$server_ip" ]; then broken="$broken $p"; fi
+done
+[ -z "$broken" ] \
+    && pass R-vpn-server-23.b "a client on each alternative port gets a working tunnel" \
+    || fail R-vpn-server-23.b "no working tunnel on:$broken"
+
+# R-vpn-server-23.d: one link per alternative port, in a root-only file, each
+# the main link with only the port and the profile name changed.
+if [ "$(stat -c '%a %U' "$ALT_LINKS_FILE" 2>/dev/null)" = "600 root" ] \
+    && python3 -I - "$LINK_FILE" "$ALT_LINKS_FILE" "${ALT_PORTS[@]}" <<'PY'
+import sys, urllib.parse
+def split(link):
+    u = urllib.parse.urlsplit(link.strip())
+    return u.port, (u.scheme, u.username, u.hostname, u.query)
+main_port, main_rest = split(open(sys.argv[1]).read())
+alts = [split(l) for l in open(sys.argv[2]) if l.strip()]
+want = sorted(int(p) for p in sys.argv[3:])
+ok = sorted(p for p, _ in alts) == want and all(rest == main_rest for _, rest in alts) and main_port not in want
+sys.exit(0 if ok else 1)
+PY
+then
+    pass R-vpn-server-23.d "one root-only link per alternative port, differing from the main link in port and name only"
+else
+    fail R-vpn-server-23.d "the alternative links are missing, readable by others, or differ from the main link in more than the port"
+fi
+
+# R-vpn-server-24.a: no link carries an ECH setting (ADR-0021).
+# R-vpn-server-26.a: the owner's links ask the app to fragment the TLS hello.
+link_params() { # link_params <file>  -> the query keys and the fragment value of every link in it
+    python3 -I -c 'import sys, urllib.parse
+for line in open(sys.argv[1]):
+    if line.strip():
+        q = dict(urllib.parse.parse_qsl(urllib.parse.urlsplit(line.strip()).query))
+        print(" ".join(sorted(q)), "|", q.get("fragment", ""))' "$1" 2>/dev/null
+}
+all_params=$(link_params "$LINK_FILE"; link_params "$ALT_LINKS_FILE"; link_params "$RELAY_LINK_FILE")
+owner_params=$(link_params "$LINK_FILE"; link_params "$ALT_LINKS_FILE")
+if [ -n "$all_params" ] && ! printf '%s\n' "$all_params" | grep -Eiq '(^| )(ech|echconfiglist|echconfig)( |$)'; then
+    pass R-vpn-server-24.a "no link carries an ECH setting"
+else
+    fail R-vpn-server-24.a "a link carries an ECH setting, or no link could be read"
+fi
+if [ -n "$owner_params" ] && ! printf '%s\n' "$owner_params" | grep -qv '| .*tlshello$'; then
+    pass R-vpn-server-26.a "the owner's links ask the app to fragment the TLS hello"
+else
+    fail R-vpn-server-26.a "an owner's link has no TLS hello fragmentation setting"
+fi
+
 # R-vpn-server-22.a: the tunnel inbound has two clients with different IDs, the
 # owner's and the fallback server's.
 check R-vpn-server-22.a "the tunnel inbound has the clients owner and relay, with different IDs" \
@@ -378,9 +454,9 @@ tcp_listeners=$(ss -Htlnp | awk '{print $4 " " $6}' | grep -Ev '^(127\.|\[::1\]|
 udp_other=$(ss -Hulnp | awk '{print $4 " " $6}' | grep -Ev '^(127\.|\[::1\]|\[::ffff:127\.)' \
     | grep -v '"xray-' | sed -E 's/^[^ ]*:([0-9]+) .*/\1/' | sort -un | tr '\n' ' ')
 ssh_port=$(sshd -T 2>/dev/null | awk '$1 == "port" {print $2}')
-expected=$(printf '%s\n80\n%s\n' "$ssh_port" "$VPN_PORT" | sort -un | tr '\n' ' ')
+expected=$(printf '%s\n' "$ssh_port" 80 "$VPN_PORT" "${ALT_PORTS[@]}" | sort -un | tr '\n' ' ')
 if [ "$tcp_listeners" = "$expected" ] && [ -z "$udp_other" ]; then
-    pass R-vpn-server-05.a "public listeners are only SSH, 80 and ${VPN_PORT}, plus the WARP tunnel's own UDP socket"
+    pass R-vpn-server-05.a "public listeners are only SSH, 80, ${VPN_PORT} and the alternative ports, plus the WARP tunnel's own UDP socket"
 else
     fail R-vpn-server-05.a "public listeners are: tcp ${tcp_listeners:-none}; udp not owned by the proxy: ${udp_other:-none}"
 fi
@@ -392,12 +468,12 @@ ufw status | awk '/ ALLOW / {print $1 " " $3}' | sort -u > "$work/ufw-rules"
     printf '%s/tcp Anywhere\n' "$ssh_port"
     # Cloudflare's list has no newline after its last range; read that one too.
     while read -r range || [ -n "$range" ]; do
-        [ -n "$range" ] && printf '80/tcp %s\n%s/tcp %s\n' "$range" "$VPN_PORT" "$range"
+        [ -n "$range" ] && for p in 80 "$VPN_PORT" "${ALT_PORTS[@]}"; do printf '%s/tcp %s\n' "$p" "$range"; done
     done < "$CF_IPS_FILE"
 } | sort -u > "$work/ufw-want"
 if [ -s "$CF_IPS_FILE" ] && cmp -s "$work/ufw-rules" "$work/ufw-want" \
     && ufw status verbose | grep -q 'deny (incoming)'; then
-    pass R-vpn-server-05.c "ufw denies incoming except SSH, and 80/tcp and ${VPN_PORT}/tcp from Cloudflare's $(grep -c . "$CF_IPS_FILE") ranges"
+    pass R-vpn-server-05.c "ufw denies incoming except SSH, and 80/tcp, ${VPN_PORT}/tcp and the alternative ports from Cloudflare's $(grep -c . "$CF_IPS_FILE") ranges"
 else
     fail R-vpn-server-05.c "ufw rules differ from SSH plus Cloudflare's ranges: $(diff "$work/ufw-want" "$work/ufw-rules" | grep -E '^[<>]' | head -n 4 | tr '\n' ';')"
 fi

@@ -25,6 +25,8 @@ Run all of them before reporting work as done. Use these exact commands; do not 
 | `docs/vps-access.md` | How to connect to the VPS and the rules for running scripts on it. |
 | `docs/redeploy.md` | The order of steps for redeploying the VPN on a new VPS. |
 | `docs/censor-red-flags.md` | What the deployed server gives away to the censors in China, Iran and Russia. |
+| `docs/client-setup.md` | What each user sets in the client app: split tunneling, fragmentation, ECH off. |
+| `docs/blocked-names.txt`, `docs/avoided-name-words.txt` | Names that are blocked, and words a site name must not contain. |
 
 ## Before planning any change, read
 
