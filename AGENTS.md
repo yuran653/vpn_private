@@ -23,6 +23,7 @@ Run all of them before reporting work as done. Use these exact commands; do not 
 | `docs/architecture.md` | Modules and allowed dependencies. |
 | `docs/constitution.md` | Rules that are never traded off. |
 | `docs/vps-access.md` | How to connect to the VPS and the rules for running scripts on it. |
+| `docs/redeploy.md` | The order of steps for redeploying the VPN on a new VPS. |
 | `docs/censor-red-flags.md` | What the deployed server gives away to the censors in China, Iran and Russia. |
 
 ## Before planning any change, read
