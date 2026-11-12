@@ -20,7 +20,7 @@ Format: `- Do not <approach>: <one-line reason>. (ADR-NNNN)`
 - Do not admit 80/tcp or 443/tcp from outside Cloudflare's published ranges: the server's address must not answer probes directly. (ADR-0013)
 - Do not limit connections per source address on port 443: every client arrives from a shared Cloudflare address. (ADR-0013)
 - Do not set `xPaddingBytes` on the server to a range the client link does not share: the server rejects requests whose padding is outside its range. (ADR-0014)
-- Do not use `grpc_pass` for the tunnel path or put `h2` in the client link's `alpn`: Russian mobile networks hang HTTP/2 to our names, and `grpc_pass` answers HTTP/1.1 requests with raw HTTP/2 frames. (ADR-0015)
+- Do not enable `http2` on nginx's listener, put `h2` in the client link's `alpn`, or set a browser `fp` (`chrome`, `firefox`, `safari`, `ios`, `edge`) in it: Russian mobile networks hang HTTP/2 to our names, and an `http2` listener answers an HTTP/1.1 tunnel client with raw HTTP/2 frames, while a browser `fp` makes the client offer `h2` anyway. (ADR-0015)
 
 ## Log
 

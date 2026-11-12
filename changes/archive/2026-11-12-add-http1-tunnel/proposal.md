@@ -2,7 +2,7 @@
 
 ## Why
 
-On 2026-11-12 a user on a Russian mobile network could not use the key, and the cover site did not load there. Tests from the phone (Termux, mobile data, no VPN) showed that HTTP/2 to `files.`, `casedigestai.com` and `status.` hangs after the TLS handshake in every run, while HTTP/1.1 to the same three names returns 200, and HTTP/2 to another Cloudflare name on the same address works. The client link offered `h2,http/1.1`, so clients used HTTP/2. Over HTTP/1.1 the tunnel did not work either: nginx's `grpc_pass` answers an HTTP/1.1 request with raw HTTP/2 frames, with or without Cloudflare in the path.
+On 2026-11-12 a user on a Russian mobile network could not use the key, and the cover site did not load there. Tests from the phone (Termux, mobile data, no VPN) showed that HTTP/2 to `files.`, `casedigestai.com` and `status.` hangs after the TLS handshake in every run, while HTTP/1.1 to the same three names returns 200, and HTTP/2 to another Cloudflare name on the same address works. The client link offered `h2,http/1.1`, so clients used HTTP/2. Over HTTP/1.1 the tunnel did not work either: the server answered an HTTP/1.1 tunnel client with raw HTTP/2 frames, with or without Cloudflare in the path; the cause is the `http2` flag on nginx's listener.
 
 ## What changes
 

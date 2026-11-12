@@ -55,7 +55,7 @@ ssh zcom-th 'sudo -n bash /tmp/verify-vpn.sh; sudo -n rm -rf /tmp/deploy-vpn.sh 
 bash scripts/verify-external.sh
 ```
 
-After ADR-0015 the client link carries `alpn=http/1.1` and nginx passes the tunnel path with `proxy_pass`. A re-run of the deploy script rewrites the link file; every device must import the new link. The earlier link (`h2,http/1.1`) keeps working where HTTP/2 is not blocked.
+After ADR-0015 the client link carries `alpn=http/1.1` and `fp=android` and nginx passes the tunnel path with `proxy_pass`. A re-run of the deploy script rewrites the link file; every device must import the new link. The earlier link (`h2,http/1.1`) keeps working where HTTP/2 is not blocked.
 
 If the deploy script prints `REBOOT NEEDED`, reboot the VPS once and run both verify scripts again.
 

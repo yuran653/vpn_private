@@ -259,25 +259,28 @@ check R-vpn-server-18.c "the tunnel inbound pads responses with $PADDING_RANGE b
     jq -e --arg p "$PADDING_RANGE" '[.inbounds[] | select(.streamSettings.network == "xhttp")
         | .streamSettings.xhttpSettings.xPaddingBytes] == [$p]' "$XRAY_CONFIG"
 
-# R-vpn-server-19.a: the link offers HTTP/1.1 only.
-check R-vpn-server-19.a "the client link's ALPN is http/1.1 alone" \
-    python3 -I -c 'import sys, urllib.parse; q = dict(urllib.parse.parse_qsl(urllib.parse.urlsplit(open(sys.argv[1]).read().strip()).query)); sys.exit(0 if q.get("alpn") == "http/1.1" else 1)' \
+# R-vpn-server-19.a: the link offers HTTP/1.1 only, with a fingerprint that does
+# not offer h2 on its own (the browser fingerprints do, whatever the ALPN says).
+check R-vpn-server-19.a "the client link's ALPN is http/1.1 alone and its fingerprint is android" \
+    python3 -I -c 'import sys, urllib.parse; q = dict(urllib.parse.parse_qsl(urllib.parse.urlsplit(open(sys.argv[1]).read().strip()).query)); sys.exit(0 if (q.get("alpn"), q.get("fp")) == ("http/1.1", "android") else 1)' \
     "$LINK_FILE"
 
 # R-vpn-server-19.b and .c: a client built from the link but pinned to one HTTP
-# version gets a working tunnel with the exit address of the main client.
-pinned_client() { # pinned_client <socks port> <alpn>  -> the exit address seen through it
-    jq --argjson port "$1" --arg alpn "$2" '.inbounds[0].port = $port
-        | .outbounds[0].streamSettings.tlsSettings.alpn = [$alpn]' "$work/client.json" > "$work/client-$1.json"
+# version gets a working tunnel.
+start_pinned() { # start_pinned <socks port> <alpn> <fingerprint>: a client built from the link, pinned to one ALPN
+    jq --argjson port "$1" --arg alpn "$2" --arg fp "$3" '.inbounds[0].port = $port
+        | .outbounds[0].streamSettings.tlsSettings.alpn = [$alpn]
+        | .outbounds[0].streamSettings.tlsSettings.fingerprint = $fp' "$work/client.json" > "$work/client-$1.json"
     "$XRAY" run -c "$work/client-$1.json" > "$work/client-$1.log" 2>&1 &
-    extra_pids="$extra_pids $!"
+    extra_pids="$extra_pids $!"     # not in a subshell, so cleanup sees it
     for _ in $(seq 1 10); do ss -Htln "sport = :$1" | grep -q . && break; sleep 1; done
-    curl -s --max-time 20 --socks5-hostname "127.0.0.1:$1" https://api.ipify.org
 }
-for pin in "19.b $H1_PORT http/1.1" "19.c $H2_PORT h2"; do
+# The HTTP/2 client carries the fingerprint of the links issued before ADR-0015.
+for pin in "19.b $H1_PORT http/1.1 android" "19.c $H2_PORT h2 chrome"; do
     # shellcheck disable=SC2086
     set -- $pin
-    seen=$(pinned_client "$2" "$3")
+    start_pinned "$2" "$3" "$4"
+    seen=$(curl -s --max-time 20 --socks5-hostname "127.0.0.1:$2" https://api.ipify.org)
     if is_ipv4 "$seen" && [ "$seen" != "$server_ip" ]; then
         pass "R-vpn-server-$1" "a client offering only $3 gets a working tunnel (exit $seen)"
     else
