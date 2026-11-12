@@ -45,3 +45,4 @@ One row per decision record in this folder. Files are named `ADR-NNNN-<slug>.md`
 | [ADR-0014](ADR-0014-browser-like-connections-files-name.md) | Browser-like connection rotation and a cover name for heavy traffic | accepted | 2026-11-12 |
 | [ADR-0015](ADR-0015-tunnel-over-http1.md) | Tunnel over HTTP/1.1, passed by proxy_pass | accepted | 2026-11-12 |
 | [ADR-0017](ADR-0017-vet-names-before-use.md) | Names are tried from a mobile network before use, and blocked names are listed | accepted | 2026-11-12 |
+| [ADR-0018](ADR-0018-second-transport-outside-cloudflare.md) | A second transport that does not pass through Cloudflare | proposed; not binding until accepted | 2026-11-12 |
