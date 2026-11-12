@@ -24,6 +24,7 @@ Format: `- Do not <approach>: <one-line reason>. (ADR-NNNN)`
 - Do not put a name in the client link before `scripts/check-name.sh` passes for it from a mobile network in each target country, and do not reuse a name or a domain listed in `docs/blocked-names.txt`: a flagged domain made every uploaded request to its names hang on a Russian mobile network. (ADR-0017)
 - Do not hand out the direct Reality link as the default link: the user's ISP then sees a hosting provider's address (flag 2). It is the fallback for networks where the Cloudflare link fails. (ADR-0018)
 - Do not let the second server take clients while its SSH port is open to everyone: its address is visible to every client's ISP and to probes. (ADR-0018)
+- Do not give the fallback server a way out of its own (a `freedom` outbound, or its own WARP tunnel): its users would exit outside Thailand, and a second way out leaks when the first server is unreachable. It forwards to the first server only. (ADR-0019)
 
 ## Log
 
@@ -47,4 +48,5 @@ One row per decision record in this folder. Files are named `ADR-NNNN-<slug>.md`
 | [ADR-0014](ADR-0014-browser-like-connections-files-name.md) | Browser-like connection rotation and a cover name for heavy traffic | accepted | 2026-11-12 |
 | [ADR-0015](ADR-0015-tunnel-over-http1.md) | Tunnel over HTTP/1.1, passed by proxy_pass | accepted | 2026-11-12 |
 | [ADR-0017](ADR-0017-vet-names-before-use.md) | Names are tried from a mobile network before use, and blocked names are listed | accepted | 2026-11-12 |
-| [ADR-0018](ADR-0018-second-transport-outside-cloudflare.md) | A second transport that does not pass through Cloudflare | accepted | 2026-11-12 |
+| [ADR-0018](ADR-0018-second-transport-outside-cloudflare.md) | A second transport that does not pass through Cloudflare | accepted; the second server's own WARP exit superseded by ADR-0019 | 2026-11-12 |
+| [ADR-0019](ADR-0019-fallback-relays-to-first-server.md) | The fallback server is an entry only and relays to the first server | accepted | 2026-11-12 |
