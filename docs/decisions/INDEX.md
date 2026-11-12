@@ -33,7 +33,7 @@ Format: `- Do not <approach>: <one-line reason>. (ADR-NNNN)`
 
 ## Log
 
-One row per decision record in this folder. Files are named `ADR-NNNN-<slug>.md`, numbered in sequence.
+One row per decision record in this folder. Files are named `ADR-NNNN-<slug>.md`, numbered in sequence. ADR-0016 is not used: it was drafted on 2026-11-12 for a change that made port 80 answer 404 instead of redirecting to HTTPS, and the owner dropped it on 2026-11-13 before it was merged. The redirect stays (R-vpn-server-15.e).
 
 | ADR | Title | Status | Date |
 |---|---|---|---|
