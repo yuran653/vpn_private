@@ -603,10 +603,15 @@ server {
     location ^~ $xhttp_path {
         client_max_body_size 0;
         client_body_timeout 5m;
-        grpc_pass grpc://127.0.0.1:$XHTTP_PORT;
-        grpc_read_timeout 5m;
-        grpc_send_timeout 5m;
-        grpc_socket_keepalive on;
+        # proxy_pass, not grpc_pass: grpc_pass answers an HTTP/1.1 request with
+        # raw HTTP/2 frames, and the link offers HTTP/1.1 only (ADR-0015).
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_buffering off;
+        proxy_request_buffering off;
+        proxy_read_timeout 5m;
+        proxy_send_timeout 5m;
+        proxy_pass http://127.0.0.1:$XHTTP_PORT;
     }
     location / {
         proxy_pass http://127.0.0.1:$COVER_SITE_PORT;
@@ -805,7 +810,7 @@ api_ok "read inbound" "panel/api/inbounds/get/$xhttp_id" | jq -r \
     | ($in.settings | if type == "string" then fromjson else . end) as $s
     | ($in.streamSettings | if type == "string" then fromjson else . end) as $st
     | ($s.clients[] | select(.email == $email)) as $c
-    | "vless://\($c.id)@\($host):\($port)?encryption=none&security=tls&sni=\($host)&fp=chrome&alpn=h2%2Chttp%2F1.1&type=xhttp&host=\($host)&path=\($st.xhttpSettings.path | @uri)&mode=auto&extra=\({xPaddingBytes: $padding, xmux: $xmux} | tojson | @uri)#\($name | @uri)"' \
+    | "vless://\($c.id)@\($host):\($port)?encryption=none&security=tls&sni=\($host)&fp=chrome&alpn=http%2F1.1&type=xhttp&host=\($host)&path=\($st.xhttpSettings.path | @uri)&mode=auto&extra=\({xPaddingBytes: $padding, xmux: $xmux} | tojson | @uri)#\($name | @uri)"' \
     > "$LINK_FILE"
 chmod 600 "$LINK_FILE"
 grep -q '^vless://' "$LINK_FILE" || die "client link was not written"

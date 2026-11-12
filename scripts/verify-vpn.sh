@@ -18,6 +18,9 @@ readonly LINK_FILE=/root/vpn/vless-link.txt
 readonly XRAY=/usr/local/x-ui/bin/xray-linux-amd64
 readonly XRAY_CONFIG=/usr/local/x-ui/bin/config.json
 readonly SOCKS_PORT=10808
+# Extra test clients that pin one HTTP version (R-vpn-server-19).
+readonly H1_PORT=10811
+readonly H2_PORT=10812
 readonly VPN_PORT=443
 readonly XHTTP_PORT=10443
 readonly CF_IPS_FILE=/root/vpn/cloudflare-ips-v4.txt
@@ -45,7 +48,8 @@ check() { # check <criterion> <description> <command...>
 
 work=$(mktemp -d)
 client_pid=""
-cleanup() { [ -n "$client_pid" ] && kill "$client_pid" 2>/dev/null; rm -rf "$work"; }
+extra_pids=""
+cleanup() { [ -n "$client_pid" ] && kill "$client_pid" 2>/dev/null; [ -n "$extra_pids" ] && kill $extra_pids 2>/dev/null; rm -rf "$work"; }
 trap cleanup EXIT
 chmod 700 "$work"
 
@@ -254,6 +258,32 @@ sys.exit(0 if ok else 1)' "$LINK_FILE" "$PADDING_RANGE" "$MAX_REUSE_SECS" "$MAX_
 check R-vpn-server-18.c "the tunnel inbound pads responses with $PADDING_RANGE bytes" \
     jq -e --arg p "$PADDING_RANGE" '[.inbounds[] | select(.streamSettings.network == "xhttp")
         | .streamSettings.xhttpSettings.xPaddingBytes] == [$p]' "$XRAY_CONFIG"
+
+# R-vpn-server-19.a: the link offers HTTP/1.1 only.
+check R-vpn-server-19.a "the client link's ALPN is http/1.1 alone" \
+    python3 -I -c 'import sys, urllib.parse; q = dict(urllib.parse.parse_qsl(urllib.parse.urlsplit(open(sys.argv[1]).read().strip()).query)); sys.exit(0 if q.get("alpn") == "http/1.1" else 1)' \
+    "$LINK_FILE"
+
+# R-vpn-server-19.b and .c: a client built from the link but pinned to one HTTP
+# version gets a working tunnel with the exit address of the main client.
+pinned_client() { # pinned_client <socks port> <alpn>  -> the exit address seen through it
+    jq --argjson port "$1" --arg alpn "$2" '.inbounds[0].port = $port
+        | .outbounds[0].streamSettings.tlsSettings.alpn = [$alpn]' "$work/client.json" > "$work/client-$1.json"
+    "$XRAY" run -c "$work/client-$1.json" > "$work/client-$1.log" 2>&1 &
+    extra_pids="$extra_pids $!"
+    for _ in $(seq 1 10); do ss -Htln "sport = :$1" | grep -q . && break; sleep 1; done
+    curl -s --max-time 20 --socks5-hostname "127.0.0.1:$1" https://api.ipify.org
+}
+for pin in "19.b $H1_PORT http/1.1" "19.c $H2_PORT h2"; do
+    # shellcheck disable=SC2086
+    set -- $pin
+    seen=$(pinned_client "$2" "$3")
+    if is_ipv4 "$seen" && [ "$seen" != "$server_ip" ]; then
+        pass "R-vpn-server-$1" "a client offering only $3 gets a working tunnel (exit $seen)"
+    else
+        fail "R-vpn-server-$1" "a client offering only $3 got '${seen:-nothing}' through the tunnel"
+    fi
+done
 
 # R-vpn-server-17.a (inside half): the link names the cover name, not an
 # address, and that name resolves to Cloudflare's ranges only.
