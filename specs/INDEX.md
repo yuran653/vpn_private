@@ -4,7 +4,7 @@ One row per capability. Each spec at `specs/<capability>/spec.md` states what th
 
 A capability is a coherent slice of behavior that a user or caller can name, such as `auth` or `export`. It is not a class, an endpoint, a task or a ticket. A new piece of work usually changes an existing capability; it gets a new row only when no existing capability covers the behavior.
 
-Specs change only when a change is archived (see `.agents/skills/sdd-change/SKILL.md`). Do not edit them directly.
+Specs change only when a change is archived (see `.agents/skills/sdd-change/SKILL.md`). Do not edit them directly, with one exception: a criterion's status and test reference, which the change cycle updates for a bug fix or for drift without a change folder.
 
 | Capability | Spec | Summary |
 |---|---|---|

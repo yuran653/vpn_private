@@ -4,6 +4,7 @@
 - Date: 2026-11-10
 - Supersedes: none
 - Change: `changes/archive/2026-11-10-harden-against-attacks/`
+- Note (2026-11-12): no script sets the host's time zone, so "server time" is Asia/Bangkok only if the provider's image is. [TODO-CLARIFY: set the time zone in the deploy, or state the reboot time in UTC?]
 
 ## Context
 

@@ -4,7 +4,7 @@ The order of steps for moving the VPN to a bare VPS: after the old one is lost, 
 
 Two questions decide where to start:
 
-- **Is the current domain still usable?** If it, or any name above it, is in `docs/blocked-names.txt`, start at step 1. Otherwise keep the domain and skip steps 1 to 3 and step 11.
+- **Is the current domain still usable?** If it, or any name above it, is in `docs/blocked-names.txt`, start at step 1. Otherwise keep the domain and skip steps 1, 3 and 11; in step 2 only confirm the three settings (SSL mode, "Always Use HTTPS" off, ECH off).
 - **Is the client link changing?** The link names the host, not the address. A new domain always means a new link. With the same domain the link stays the same only if a copy of `/root/vpn/` from the old VPS is restored in step 7. Without that copy the new VPS issues a new client ID and tunnel path, so every device imports the new link (step 12).
 
 ## Before the VPS
@@ -31,7 +31,7 @@ Two questions decide where to start:
 
 ## Before any device gets the link
 
-11. **Check the names**: from a phone on mobile data in each target country, with no VPN, run `bash scripts/check-name.sh <tunnel name>` (ADR-0017). This comes after the deploy because the check needs the site to answer: a name with no server behind it fails the first GET. Only a pass (exit 0) lets the name go out. Exit 2 means that network cannot judge the name; try another network, it is not a pass. On a fail (exit 1), add the domain to `docs/blocked-names.txt`, delete its records in Cloudflare, and go back to step 1. The VPS stays: skip steps 4 to 7 on that round.
+11. **Check the names**: from a phone on mobile data in each target country (`docs/vps-access.md`, "Target countries"), with no VPN, run `bash scripts/check-name.sh <tunnel name>` (ADR-0017). This comes after the deploy because the check needs the site to answer: a name with no server behind it fails the first GET. Only a pass (exit 0) lets the name go out. Exit 2 means that network cannot judge the name; try another network, it is not a pass. On a fail (exit 1), add the domain to `docs/blocked-names.txt`, delete its records in Cloudflare, and go back to step 1. The VPS stays: skip steps 4 to 7 on that round.
 12. **Hand out the link**: read it with `ssh zcom-th 'sudo -n cat /root/vpn/vless-link.txt'`. Import it on one device first and load a page through it on mobile data; then import it on the others. Give every user `docs/client-setup.md` with the link: split tunneling, fragmentation, ECH off (ADR-0021). A user whose network cuts 443 gets a link for another port from `/root/vpn/vless-links-alt.txt` (ADR-0020). Never paste the link into the repo or into a chat that keeps it.
 
 ## After
@@ -41,7 +41,7 @@ Two questions decide where to start:
 
 ## The fallback server
 
-The second server (ADR-0018, ADR-0019) is deployed after step 10, because it needs the first server's relay link. Its order is in `docs/vps-access.md`, "Fallback server": try the candidate address from a phone, baseline with `--ssh-from`, move the relay link, deploy, verify. Its link goes out in step 12 as a second profile, for networks where the first one fails. After the first server's domain is replaced, move the new relay link over and run `deploy-fallback.sh` again.
+The second server (ADR-0018, ADR-0019) is deployed after step 10, because it needs the first server's relay link. Its order is in `docs/vps-access.md`, "Fallback server": try the candidate address from a phone, baseline with `--ssh-from`, move the relay link, deploy, verify. Its link is not handed out with the main one in step 12: a user gets it only after the main link and the links for the other ports have failed on that user's network (ADR-0018). After the first server's domain is replaced, move the new relay link over and run `deploy-fallback.sh` again.
 
 ## Open
 

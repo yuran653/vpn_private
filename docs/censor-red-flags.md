@@ -22,10 +22,10 @@ Each flag is a finding, not a fix. A fix is its own change with a decision recor
 
 | # | Flag | What the censor sees | Who checks it |
 |---|---|---|---|
-| 6 | Only one transport, with no fallback | XHTTP through Cloudflare is the only way in (ADR-0013); before, it was Reality over TCP 443. Once the IP or protocol is blocked, every user is cut off at once. Iran's protocol whitelisting and Russia's whitelist mode during shutdowns block it outright. On 2026-11-12 a Russian mobile network hung HTTP/2 to all three site names while HTTP/1.1 passed; the link now offers HTTP/1.1 only (ADR-0015). | CN, RU, IR |
+| 6 | Only one transport, with no fallback | XHTTP through Cloudflare is the only way in today (ADR-0013); a fallback server reached directly is decided but not built (ADR-0018); before, it was Reality over TCP 443. Once the IP or protocol is blocked, every user is cut off at once. Iran's protocol whitelisting and Russia's whitelist mode during shutdowns block it outright. On 2026-11-12 a Russian mobile network hung HTTP/2 to all three site names while HTTP/1.1 passed; the link now offers HTTP/1.1 only (ADR-0015). | CN, RU, IR |
 | 7 | ~~Probe timing gives the relay away~~ **Fixed 2026-11-12** | Was: a probe without the key was relayed to the real samsung.com, a round trip away. Now the server answers the probe itself, from a web server on the same host (ADR-0012). | CN |
 | 8 | The fingerprint may not match the device | The client link always sets one fingerprint, since ADR-0015 `fp=android` (it was `chrome`; the browser ones offer `h2` and break the HTTP/1.1 link), even from an iPhone, where real browsers send Safari's hello. And uTLS's Chrome fingerprint can fall behind the current Chrome release. | CN |
-| 9 | No HTTP/3 | Was: the server answered TLS over TCP only. Cloudflare's edge now answers the site names over HTTP/3 too, for browsers; the tunnel itself still uses HTTP/2. | CN |
+| 9 | No HTTP/3 | Was: the server answered TLS over TCP only. Cloudflare's edge now answers the site names over HTTP/3 too, for browsers; the tunnel itself uses HTTP/1.1 (ADR-0015). | CN |
 | 10 | ~~The cover site doesn't fit Chinese users~~ **Fixed 2026-11-12** | Was: samsung.com reached through a Thai IP, while China serves it from local CDN nodes. Now the name is a small site that is hosted only on this IP (ADR-0012). | CN |
 
 ## Not a flag on the wire (already handled)
@@ -45,13 +45,13 @@ A user could not connect. The server itself was healthy; its address was no long
 | Server | Up, with enough memory and disk. `ssh`, `x-ui`, `fail2ban` and `ufw` active, 22 and 443 listening, VPS network fine (it reaches `1.1.1.1`). A packet capture showed the server answering other clients on 443 and 22. |
 | Rules out | A server fault, a firewall rule or ban on the server (only one unrelated address was banned by `fail2ban`), and a ufw limit. The owner's manual restart did not change anything. |
 | Cause | The ISP block of the server IP. Not proven: the capture of the owner's own packets and a test from a second network were not done. The timing points at the domain link (flag 1: a name now ties the Thai hosting IP to a hostname that DNS and certificates expose). |
-| Recovery | A new IP from Z.com, then a re-run of `deploy-vpn.sh` to rewrite the client link (`docs/vps-access.md`, "What the server does not defend against"). |
+| Recovery | A new IP from Z.com, then a re-run of `deploy-vpn.sh` to rewrite the client link, which named the address at the time. Since ADR-0013 the link names the host and does not change with the address (`docs/vps-access.md`, "What the server does not defend against"). |
 
 [TODO-CLARIFY: which ISP and country blocked the IP, and was the domain used in the client link, in DNS only, or on a certificate?]
 
 Lessons:
 
-- Do not link a domain to the VPS IP without a decision record. ADR-0012 is that record for `casedigestai.com`.
+- Do not link a domain to the VPS IP without a decision record. ADR-0012 was that record for `casedigestai.com`. Since ADR-0018 the owner's domain is never pointed straight at a VPS address, with or without a record.
 - The cover name that matches the IP was deployed on 2026-11-12 on the live IP, not on a spare one. The VPN worked on Wi-Fi and mobile data afterwards. If the IP is blocked again, the domain link is the first suspect.
 - With one IP and one transport (flag 6) a block cuts every user off at once, so spare IPs are not optional.
 

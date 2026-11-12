@@ -12,7 +12,7 @@ The cover domain `casedigestai.com` is unusable on Russian mobile networks (2026
 ## Decision
 
 - Blocked names are listed in `docs/blocked-names.txt`. The site and the client link use no listed name and no name under a listed domain; `verify-external.sh` checks it.
-- A name goes into the client link only after `scripts/check-name.sh` passes for it from a phone on mobile data in each country the owner serves. The check meets the name the way the Beeline measurements found it flagged: GET over HTTP/1.1 and HTTP/2, and uploads of 500, 5000 and 30000 bytes, with a control name to tell a bad name from a bad network.
+- A link that carries a name is given to a device only after `scripts/check-name.sh` passes for it from a phone on mobile data in each country the owner serves. The check meets the name the way the Beeline measurements found it flagged: GET over HTTP/1.1 and HTTP/2, and uploads of 500, 5000 and 30000 bytes, with a control name to tell a bad name from a bad network.
 - A tunnel name sits on a registered domain used for nothing else, so a block on it costs no other site.
 
 ## Rejected alternatives
@@ -25,8 +25,8 @@ The cover domain `casedigestai.com` is unusable on Russian mobile networks (2026
 
 ## Consequences
 
-Replacing a blocked domain starts with the check on a phone, before DNS, certificate and link change. `R-vpn-server-20.a` fails until the deployed domain is replaced. A passing check does not guarantee that a name stays unflagged, and says nothing about Iran or China.
+Replacing a blocked domain ends with the check on a phone: after the deploy, because the check needs the site to answer, and before any device gets the link (`docs/redeploy.md`, step 11; corrected 2026-11-12). `R-vpn-server-20.a` fails until the deployed domain is replaced. A passing check does not guarantee that a name stays unflagged, and says nothing about Iran or China.
 
 ## Do not
 
-- Do not put a name in the client link before `scripts/check-name.sh` passes for it from a mobile network in each target country, and do not reuse a name or a domain listed in `docs/blocked-names.txt`: a flagged domain made every uploaded request to its names hang on a Russian mobile network. (ADR-0017)
+- Do not give any device a link that carries a name before `scripts/check-name.sh` passes for it from a mobile network in each target country (`docs/vps-access.md`, "Target countries"), and do not reuse a name or a domain listed in `docs/blocked-names.txt`: a flagged domain made every uploaded request to its names hang on a Russian mobile network. (ADR-0017)

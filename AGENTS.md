@@ -1,6 +1,6 @@
 # Personal VPS located in Thailand
 
-Deploy and harden a VLESS VPN server on a bare Ubuntu VPS, reached by clients only through Cloudflare (VLESS over XHTTP, ADR-0013). The server must prevent every identity disclosure that can be enforced server-side: DNS leaks, IPv6 egress, tunnel fingerprinting by DPI, and panel discovery.
+Deploy and harden a VLESS VPN server on a bare Ubuntu VPS, reached by clients only through Cloudflare (VLESS over XHTTP, ADR-0013). A fallback server on its own VPS, reached directly, is decided but not built (ADR-0018, ADR-0019). The server must prevent every identity disclosure that can be enforced server-side: DNS leaks, IPv6 egress, tunnel fingerprinting by DPI, and panel discovery.
 
 Stack: Ubuntu 22.04/24.04 LTS, Xray core managed through the 3x-ui panel, Cloudflare in front of the server (ADR-0013), Cloudflare WARP as the exit for client traffic (ADR-0008), nginx, certbot and a Docker container for the cover site (ADR-0012), ufw, fail2ban, unattended-upgrades
 
@@ -11,7 +11,7 @@ Stack: Ubuntu 22.04/24.04 LTS, Xray core managed through the 3x-ui panel, Cloudf
 - Type-check: [TODO-CLARIFY: type-check command]
 - Test: [TODO-CLARIFY: test command]
 
-Run all of them before reporting work as done. Use these exact commands; do not substitute others.
+Run all of them before reporting work as done. Use these exact commands; do not substitute others. Until they are defined, run `bash -n` on every changed script and each verify script that can run, and state which could not.
 
 ## Map
 
