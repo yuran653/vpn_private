@@ -15,7 +15,7 @@ Each flag is a finding, not a fix. A fix is its own change with a decision recor
 | 1 | ~~The name and the IP don't match~~ **Fixed 2026-11-12** | Was: the TLS hello named `www.samsung.com` on a Thai hosting IP. Then the hello named `status.casedigestai.com`, which resolved to this IP (ADR-0012). Now the same name resolves to Cloudflare, which is where the client connects (ADR-0013). | CN, RU, IR |
 | 2 | ~~The IP is in a datacenter~~ **Fixed 2026-11-12** | Was: home users sending gigabytes to a hosting provider's IP block, the basic proxy pattern. Now clients connect only to Cloudflare addresses, which serve millions of ordinary sites; the server's own address answers nobody but Cloudflare on 80 and 443 (ADR-0013). New risk instead: Russia is reported to throttle Cloudflare since 2025, and the free plan has no nodes in China. | RU, CN |
 | 3 | One IP, heavy traffic, long sessions **Weakened 2026-11-12** | Was: each user held connections for hours and moved gigabytes to one "website". Since ADR-0013 the address is Cloudflare's, shared with many sites. Since ADR-0014 a connection takes no new sessions after 2 to 5 minutes, requests and responses are padded, and the name is `files.casedigestai.com`, a case-file sync service where heavy transfers both ways are normal. Left: one hostname still carries all of a user's traffic, and a heavy user is still heavy. Next measures: split tunneling in the client, per-user names. | CN, RU |
-| 4 | Many users on one IP | Once there are several users, many unrelated home addresses in one country all connect to the same VPS. That marks a proxy without looking inside the traffic. Weaker since ADR-0013: they connect to Cloudflare addresses, but they all name one hostname. | CN, RU, IR |
+| 4 | Many users on one IP **Deferred 2026-11-12** | Once there are several users, many unrelated home addresses in one country all connect to the same VPS. That marks a proxy without looking inside the traffic. Weaker since ADR-0013: they connect to Cloudflare addresses, but they all name one hostname. Deferred by the owner for the test period, which has at most 20 to 30 users across the three countries: the Cloudflare addresses are shared with millions of sites, so the user count does not stand out there. The name does; on Beeline it was cut with one user (see "Field observation" below). Revisit when users grow past the test period. | CN, RU, IR |
 | 5 | SSH is open on the same IP | `harden-vps.sh` allows the SSH port to everyone. The OpenSSH banner shows the Ubuntu version, so a probe sees a Linux VPS next to the website. | CN (active probing) |
 
 ## Medium: makes detection easier
@@ -61,7 +61,9 @@ Flags 1 and 2 are fixed (ADR-0012, ADR-0013). Fixing flags 5 and 6 would cover m
 - SSH reachable only from known addresses, or only through a hidden path.
 - A second transport and spare IPs, so one block doesn't cut everyone off.
 
-[TODO-CLARIFY: which countries come first, and how many users are expected?]
+Expected users: at most 20 to 30 during the test period (owner, 2026-11-12).
+
+[TODO-CLARIFY: which countries come first?]
 
 ## Field observation: Beeline, Moscow, mobile data (2026-11-12)
 
