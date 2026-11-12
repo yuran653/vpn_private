@@ -28,6 +28,39 @@ First connect: accept the host key (`yes`). If the key prompt returns on every c
 4. Keep the SSH session alive when editing sshd/ufw: open a second session and verify login works before closing the first.
 5. All privileged operations via `sudo -n` — agent should not expect interactive password prompts; if a command asks for a password, stop and report.
 
+## Deploying on a new VPS
+
+The order for a bare VPS. The sections below hold each step's details. The old VPS and its IP are gone (2026-11-12). `casedigestai.com` is on `docs/blocked-names.txt`, so a new server also needs a new domain.
+
+**Before the VPS**
+
+1. **Choose a new domain** that is used for nothing else and is not under a name in `docs/blocked-names.txt` (ADR-0017). Plan three names: the apex, the tunnel name (now `files.`) and `status.` (or drop `status.` from the scripts: it was kept only for links from before ADR-0014, and a new domain has no such links).
+2. **Put the zone on Cloudflare.** Set SSL mode to "Full (strict)". Add no records yet. [TODO-CLARIFY: must "Always Use HTTPS" be off until the first certificate is issued? The certificate challenge arrives on port 80 through Cloudflare.]
+3. **Change the names in the repo** (task branch and PR, merged before the deploy): `scripts/deploy-vpn.sh`, `scripts/verify-vpn.sh`, `scripts/verify-external.sh`, `site/docker-compose.yml`, `site/html/index.html`, `docs/how-it-works.html` and `specs/vpn-server/spec.md`.
+
+**The VPS**
+
+4. **Order the VPS**: Ubuntu 24.04 LTS, x86_64, key login for `ubuntu`, in Bangkok (the WARP endpoint in ADR-0009 was chosen for that location).
+5. **Point the `zcom-th` alias at the new IP** in `~/.ssh/config`, and remove the old host key with `ssh-keygen -R <old IP>`. Log in once and run the post-connect sanity check. Record in the Target table what the geo-IP services say about the new address.
+6. **Run the baseline**: `harden-vps.sh <YOUR_IP>`, then `verify-baseline.sh` ("Baseline script" below). From this step on, keep one SSH session open while another one tests login.
+
+**Cloudflare → server**
+
+7. **Add the A records for every site name**, pointing to the new IP, **proxied (orange cloud) from the first second**. A record left on "DNS only" even briefly puts the IP into DNS history and ties the name to a hosting address (flag 1 and the 2026-11-12 incident in `docs/censor-red-flags.md`). Delete the old domain's records.
+8. **Deploy**: run `deploy-vpn.sh` detached and wait for `[deploy] done` ("VPN deployment" below). If it prints `REBOOT NEEDED` (it does on a fresh host: IPv6 is turned off in the kernel), reboot once.
+9. **Verify**: `verify-vpn.sh` on the VPS and `verify-external.sh` from the workstation. Check R-vpn-server-12.f: if the WARP endpoint `188.114.97.1` is not answered in Bangkok from the new host, report it, because ADR-0009 was decided for the old host.
+
+**Before any device gets the link**
+
+10. **Check the names**: from a phone on mobile data in each target country, with no VPN, run `bash scripts/check-name.sh <tunnel name>` (ADR-0017). This comes after the deploy because the check needs the site to answer. Only a pass (exit 0) lets the name go out. On a fail, add the domain to `docs/blocked-names.txt` and go back to step 1. The VPS stays.
+11. **Hand out the link**: read it with `ssh zcom-th 'sudo -n cat /root/vpn/vless-link.txt'` and import it on each device. The old link does not work any more. Never paste the link into the repo or a chat that keeps it.
+
+**Record**
+
+12. Update this file (the Target table: IP geo results, zone), `docs/censor-red-flags.md` (the incident row and flag status for the new host) and the spec, through a change with a PR.
+
+Open, not part of this order yet: flag 5 (SSH open to everyone). A new IP has no scan history, so closing SSH to the internet before the deploy keeps it clean, but no option has been decided ([TODO-CLARIFY: SSH through a Cloudflare Tunnel or only from known addresses?]).
+
 ## Baseline script
 
 `scripts/harden-vps.sh` applies the baseline: SSH keepalive and login settings (no root, no passwords, no X11), fail2ban, ufw, SYN flood settings and per-address limits on SSH connections. Run it on the VPS with your current IP, which is passed as an argument and not stored in the repo, then check the result:
