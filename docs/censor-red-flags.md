@@ -62,3 +62,20 @@ Flags 1 and 2 are fixed (ADR-0012, ADR-0013). Fixing flags 5 and 6 would cover m
 - A second transport and spare IPs, so one block doesn't cut everyone off.
 
 [TODO-CLARIFY: which countries come first, and how many users are expected?]
+
+## Field observation: Beeline, Moscow, mobile data (2026-11-12)
+
+Measured from a phone (Termux, no VPN) after the key failed in Happ with the HTTP/1.1 link (ADR-0015). Each line is a test and its result.
+
+| Test | Result |
+|---|---|
+| GET over HTTP/1.1 to the three site names | 200 |
+| GET over HTTP/2 to the three site names | hangs after the TLS handshake |
+| HTTP/2 and large downloads from other Cloudflare names | work |
+| POST to `files.casedigestai.com` over HTTP/1.1 | 10 and 500 bytes pass; 2000 bytes and up hang |
+| POST to `casedigestai.com` and `status.casedigestai.com`, 5 KB | hang |
+| POST to `www.cloudflare.com`, 2 KB to 30 KB | pass |
+| `www.cloudflare.com` name sent to our Cloudflare address, 10 KB POST | passes |
+| Our name sent to `www.cloudflare.com`'s address, 10 KB POST | hangs |
+
+Reading: the carrier cuts uploads of more than about 1 to 2 KB to any name under `casedigestai.com`, and the address does not matter. The tunnel needs uploads, so the key cannot connect on this network, whatever the transport settings. The cut follows the name, so a new domain is the first thing to try; whether a fresh name stays unflagged once it carries tunnel traffic is not known. The same name passes the same tests from the Russian datacenter and Mobile TeleSystems (MTS) probes, so this is one carrier on one network, not all of Russia.
