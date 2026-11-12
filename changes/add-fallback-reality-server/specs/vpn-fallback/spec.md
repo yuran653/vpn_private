@@ -16,7 +16,7 @@ A client holding the fallback link connects to the second server's address direc
 A party without the link that connects to the second server sees a third-party website that belongs in that network.
 
 - **R-vpn-fallback-02.a** WHEN a TLS client without the link connects to port 443 of the second server with the cover name THEN it receives that site's publicly trusted certificate and its page.
-- **R-vpn-fallback-02.b** WHEN the cover name is resolved from the internet THEN it resolves to an address in the same provider network as the second server, and the name is not on `docs/blocked-names.txt` and is not one of the owner's.
+- **R-vpn-fallback-02.b** WHEN the cover name is resolved from the internet THEN it resolves only to addresses announced by the same AS number as the second server's address, and the name is not on `docs/blocked-names.txt` and is not one of the owner's.
 - **R-vpn-fallback-02.c** WHEN a TLS client connects to port 443 with another name or with no name THEN it gets the cover site's answer, not a reset that differs from the cover site's own.
 
 ### R-vpn-fallback-03: Nothing else answers

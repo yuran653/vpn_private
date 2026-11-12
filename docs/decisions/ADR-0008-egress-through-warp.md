@@ -4,6 +4,7 @@
 - Date: 2026-11-10
 - Supersedes: none
 - Change: `changes/archive/2026-11-10-route-egress-through-warp/`
+- Note (2026-11-12): clients no longer connect to the server's own address (ADR-0013), and this server has no Reality forwarding.
 
 ## Context
 
@@ -42,4 +43,4 @@ Measured on 2026-11-10 with a client on the VPS, 100 MB from a Singapore test se
 
 ## Do not
 
-Do not add a `freedom` outbound to the Xray template or route client traffic out from the server's own address: Google places that address in Myanmar, and a second way out leaks when WARP is down. (ADR-0008)
+- Do not add a `freedom` outbound to the Xray template or send client traffic to its destination from a server's own address: Google places the first server's address in Myanmar, and a second way out leaks when WARP is down. (ADR-0008)

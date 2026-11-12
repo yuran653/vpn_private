@@ -227,7 +227,7 @@ a:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
         <rect x="10" y="110" width="130" height="120" rx="12" class="d-node"/>
         <text x="24" y="140" class="d-title">Your device</text>
         <text x="24" y="162" class="d-sub">Happ, one link</text>
-        <text x="24" y="182" class="d-mono">fp: chrome</text>
+        <text x="24" y="182" class="d-mono">fp: android</text>
         <text x="24" y="200" class="d-mono">rotates, pads</text>
 
         <rect x="210" y="110" width="130" height="120" rx="12" class="d-node cf"/>
@@ -278,7 +278,7 @@ a:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
       <article class="step">
         <span class="k">1 · Device</span>
         <h3>An HTTPS visit to a Cloudflare site</h3>
-        <p>Happ looks up <code>files.casedigestai.com</code>, gets a Cloudflare address, and opens TLS to it with Chrome's fingerprint. Your traffic travels as VLESS in the bodies of ordinary HTTP requests (XHTTP), inside that HTTPS. The VPS address never appears on your network.</p>
+        <p>Happ looks up <code>files.casedigestai.com</code>, gets a Cloudflare address, and opens TLS to it with an Android client's fingerprint, offering HTTP/1.1 only (ADR-0015). Your traffic travels as VLESS in the bodies of ordinary HTTP requests (XHTTP), inside that HTTPS. The VPS address never appears on your network.</p>
       </article>
       <article class="step">
         <span class="k">2 · Shape</span>
@@ -409,7 +409,7 @@ colo=BKK   <span class="c"># R-vpn-server-12.f</span></div>
       <article class="guard">
         <span class="risk">DPI fingerprinting</span>
         <h3>Ordinary HTTPS to Cloudflare</h3>
-        <p>Your ISP sees a Chrome‑like TLS hello to a Cloudflare address, the same addresses that serve millions of sites. Inside, the tunnel is plain HTTP requests, rotated across short connections and padded, so neither a hosting address nor one hour‑long connection gives it away.</p>
+        <p>Your ISP sees an ordinary TLS hello to a Cloudflare address, the same addresses that serve millions of sites. Inside, the tunnel is plain HTTP requests, rotated across short connections and padded, so neither a hosting address nor one hour‑long connection gives it away.</p>
         <span class="req">R‑vpn‑server‑17 · 18 · ADR‑0013 · ADR‑0014</span>
       </article>
       <article class="guard">
@@ -483,6 +483,6 @@ scripts/verify-baseline.sh</div>
   </section>
 
   <footer>
-    Built from <span class="mono">specs/vpn-server</span>, <span class="mono">specs/vps-baseline</span> and ADR‑0002 to ADR‑0014. Updated 2026‑11‑12; speed figures from 2026‑11‑10.
+    Built from <span class="mono">specs/vpn-server</span>, <span class="mono">specs/vps-baseline</span> and ADR-0002 to ADR-0015. The names shown are on docs/blocked-names.txt and are being replaced; the other HTTPS ports (ADR-0020) and the fallback server (ADR-0018) are not shown. Updated 2026‑11‑12; speed figures from 2026‑11‑10.
   </footer>
 </main>

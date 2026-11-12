@@ -2,7 +2,7 @@
 
 - Status: accepted; the second server's own WARP exit superseded by ADR-0019
 - Date: 2026-11-12
-- Supersedes: ADR-0013 in part (the "CDN only" choice and its first "Do not" line) and ADR-0012 in part (its "Do not" line on a third-party Reality cover site, for the second server only)
+- Supersedes: ADR-0013 in part (the "CDN only" choice and its first "Do not" line) and ADR-0012 in part (its "Do not" line on a third-party Reality cover site, for the second server only). It narrows ADR-0013's two other "Do not" lines to the server behind Cloudflare, and adopts for the second server the SSH restriction that ADR-0005 rejected for the first
 - Change: none yet
 
 ## Context
@@ -21,10 +21,10 @@ The owner chose on 2026-11-12:
 - A second transport is added on a **separate VPS with its own address**: VLESS with Reality and Vision on 443/tcp, reached directly. A block of that address, or its discovery, then tells nothing about the Cloudflare origin.
 - **Russia comes first.** It is the only country where the current setup is measured to fail. An entry relay inside Russia and a host with a premium route to China are later steps, each with its own decision.
 - **The host is decided by test.** Two or three candidate providers are tried from a phone on mobile data in Russia before one is kept. [TODO-CLARIFY: which candidate providers and locations?]
-- **Reality borrows the name of a third-party site hosted in the same provider network as the VPS**, so the name and the address match. This answers the first reason ADR-0012 gave against a third-party site; the relay's extra round trip stays and is accepted for a fallback. The owner's own domain is not pointed at that address: that would repeat the 2026-11-12 incident.
-- Before that server takes clients, SSH on it is closed to everyone but known addresses (flag 5), because its address is visible to every client's ISP.
+- **Reality borrows the name of a third-party site hosted in the same provider network as the VPS**, meaning that its addresses are announced by the same AS number as the VPS's address, so the name and the address match. This answers the first reason ADR-0012 gave against a third-party site; the relay's extra round trip stays and is accepted for a fallback. The owner's own domain is not pointed at that address: that would repeat the 2026-11-12 incident.
+- Before that server takes clients, SSH on it is closed to everyone but the addresses the operator lists when the baseline is applied (flag 5), because its address is visible to every client's ISP. ADR-0005 rejected this for the first server because the operator's address is dynamic; here the provider's console is accepted as the way back in.
 - Its client traffic leaves through WARP, with the same DNS and IPv6 rules as the first server (ADR-0008, ADR-0004).
-- Users get the second link only as a fallback, for networks where the first one fails.
+- A user gets the second link only after the main link and the links for the other ports have failed on that user's network.
 
 ## Rejected alternatives
 
@@ -48,6 +48,6 @@ The owner chose on 2026-11-12:
 ## Do not
 
 - Do not give clients a link to the address of the server behind Cloudflare, or open a second way in on that server: its address must stay unused and unanswering. A way in outside Cloudflare runs on a separate server and is handed out only as a fallback. (ADR-0013, reworded by ADR-0018)
-- Do not use as the Reality cover site a third-party site hosted outside the provider network of the VPS, or point the owner's own domain straight at a VPS address: the first does not match the address, the second ties a name to a hosting address. (ADR-0012, reworded by ADR-0018)
-- Do not hand out the direct Reality link as the default link: the user's ISP then sees a hosting provider's address (flag 2). It is the fallback for networks where the Cloudflare link fails. (ADR-0018)
-- Do not let the second server take clients while its SSH port is open to everyone: its address is visible to every client's ISP and to probes. (ADR-0018)
+- Do not use as the Reality cover site a third-party site whose addresses are not announced by the same AS number as the VPS's address, or point the owner's own domain straight at a VPS address: the first does not match the address, the second ties a name to a hosting address. (ADR-0012, reworded by ADR-0018)
+- Do not hand out the direct Reality link as the default link: the user's ISP then sees a hosting provider's address (flag 2). Give a user the fallback link only after the main link and the links for the other ports have failed on that user's network. (ADR-0018)
+- Do not let the second server take clients while its SSH port is open to any address the operator did not list when the baseline was last applied: its address is visible to every client's ISP and to probes. (ADR-0018)

@@ -4,7 +4,7 @@
 
 The second server gets its own deploy and verify scripts. The host steps both servers share (updates, IPv6 off, TCP tuning, the pinned 3x-ui install on loopback) move out of `deploy-vpn.sh` into one sourced file, so the two servers cannot drift apart. The first server has to be redeployed on a fresh VPS anyway (`docs/redeploy.md`), and that run is what verifies the move.
 
-On the second server Xray itself holds 443/tcp with a VLESS inbound using Reality and the Vision flow. Reality hands every connection that lacks the key to the cover site, a third-party site in the same provider network, chosen after the provider is known and kept in a root-only file on the server, not in the repo. No nginx, no certificate, no Docker and no WARP on this host.
+On the second server Xray itself holds 443/tcp with a VLESS inbound using Reality and the Vision flow. Reality hands every connection that lacks the key to the cover site, a third-party site in the same provider network, chosen after the provider is known and kept in the panel's inbound on the server, not in the repo. No nginx, no certificate, no Docker and no WARP on this host.
 
 The second server's only outbound is the relay (ADR-0019): VLESS over XHTTP to the first server's name through Cloudflare, built from a relay link that the first server issues for a second client, `relay`. Port 53 from clients goes into the relay too, so the first server answers it. The operator moves the relay link from one server to the other through a pipe between two SSH sessions, so it is never printed or stored on the workstation.
 

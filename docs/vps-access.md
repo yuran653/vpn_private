@@ -4,6 +4,8 @@ Instructions for coding agents (Kimi Code and similar) operating in this repo.
 
 ## Target
 
+The VPS in this table was killed on 2026-11-12 (`docs/redeploy.md`). The table describes it until the new one is recorded (step 14 there).
+
 | Item | Value |
 |---|---|
 | VPS | Z.com Cloud, BKK4 zone (Bangkok), plan C2 (2 vCPU / 4 GB / 50 GB) |
@@ -11,6 +13,14 @@ Instructions for coding agents (Kimi Code and similar) operating in this repo.
 | Global IP | registered to Thailand, but geo-IP databases disagree (2026-11-10): ipinfo, ip-api and Cloudflare say Thailand, ifconfig.co says Japan, Google says Myanmar. Client traffic therefore leaves through Cloudflare WARP (ADR-0008). |
 | SSH | key-only, user `ubuntu`, alias `zcom-th`, private key `~/.ssh/zcom-th-vpn` (keep secret), public key `~/.ssh/zcom-th-vpn.pub` |
 | Root | SSH login as `root` is **refused** by sshd (`PermitRootLogin no`, set by `scripts/harden-vps.sh`). `su root` works via console password (fallback only). Use `sudo` for privileged commands. |
+
+## Target countries
+
+The countries whose mobile networks a name is checked from before a device gets its link (ADR-0017), and where the fallback server's address is tried (ADR-0018):
+
+- Russia.
+
+[TODO-CLARIFY: are Iran and China on this list yet? The owner's goal names all three, but nobody has run the check there.]
 
 ## Connecting
 
@@ -63,7 +73,7 @@ bash scripts/verify-external.sh
 
 The deploy script reads the host steps it shares with the fallback server from `scripts/lib/host-common.sh`, so the `lib` folder must be copied next to it. It also issues a second client, `relay`, for the fallback server, and writes that link to `/root/vpn/relay-link.txt` (ADR-0019). The split into `lib/` and the `relay` client have not run on a server yet (2026-11-12).
 
-After ADR-0015 the client link carries `alpn=http/1.1` and `fp=android` and nginx passes the tunnel path with `proxy_pass`. A re-run of the deploy script rewrites the link file; every device must import the new link. The earlier link (`h2,http/1.1`) keeps working where HTTP/2 is not blocked.
+After ADR-0015 the client link carries `alpn=http/1.1` and `fp=android` and nginx passes the tunnel path with `proxy_pass`. The link changed once with ADR-0015, and every device had to import it. A re-run of the deploy script leaves the link unchanged (R-vpn-server-08.a). The earlier link (`h2,http/1.1`) keeps working where HTTP/2 is not blocked.
 
 If the deploy script prints `REBOOT NEEDED`, reboot the VPS once and run both verify scripts again. The reboot empties `/tmp`, so copy `verify-vpn.sh` to the VPS again first.
 
@@ -86,7 +96,7 @@ Before a candidate VPS is kept, try its address from a phone on mobile data in R
 bash scripts/check-host.sh <address> <cover name>      # exit 0 pass, 1 fail, 2 cannot judge
 ```
 
-The cover name is a third-party site hosted in the same provider network as the VPS, one that answers TLS 1.3. Never one of the owner's names.
+The cover name is a third-party site hosted in the same provider network as the VPS (its addresses announced by the same AS number), one that answers TLS 1.3. Never one of the owner's names.
 
 Baseline first, with SSH closed to everyone but the listed addresses. `deploy-fallback.sh` refuses to run otherwise:
 
@@ -119,6 +129,8 @@ bash scripts/verify-external.sh zcom-th vpn-fallback
 
 ## Cover site
 
+The names in this section are on `docs/blocked-names.txt` and are to be replaced ("Replacing the domain" below). Until then the scripts and the spec still carry them (R-vpn-server-20.a is marked `drift`).
+
 The server is the website of `casedigestai.com`, `files.casedigestai.com` and `status.casedigestai.com` (ADR-0012, ADR-0014), published through Cloudflare (ADR-0013). Clients connect to `files.casedigestai.com`, which the page presents as case-file sync, so heavy transfers have a reason. `status.casedigestai.com` is kept for links issued before ADR-0014; once every device has the new link it can go.
 
 - Cloudflare holds the domain's DNS and proxies every name (orange cloud, SSL mode "Full (strict)"). Clients and visitors connect to Cloudflare; Cloudflare connects to the server.
@@ -133,7 +145,7 @@ The server is the website of `casedigestai.com`, `files.casedigestai.com` and `s
 
 ## Updates and reboots
 
-Security updates install every night without an operator. When one needs a reboot, the host reboots itself at 04:00 Asia/Bangkok (ADR-0006); VPN connections drop for about a minute. Port 443 has no per-address limits: every client arrives from a Cloudflare address (ADR-0013).
+Security updates install every night without an operator. When one needs a reboot, the host reboots itself at 04:00 server time (ADR-0006, which assumes the host's time zone is Asia/Bangkok; no script sets it, see the note there); VPN connections drop for about a minute. Port 443 has no per-address limits: every client arrives from a Cloudflare address (ADR-0013).
 
 ## TCP tuning
 
@@ -151,9 +163,9 @@ Client traffic does not leave from the server's own address. The deploy script r
 
 ## What the server does not defend against
 
-A flood aimed at the site names is absorbed by Cloudflare. A volumetric DDoS aimed at the server's own address, which is in DNS history and certificate logs from before ADR-0013, still fills the uplink before the firewall sees a packet. The practical recovery is a new IP address from the provider, then the two A records in Cloudflare changed to it (still proxied), then a re-run of `deploy-vpn.sh`. The client link names the host, not the address, so it does not change.
+A flood aimed at the site names is absorbed by Cloudflare. A volumetric DDoS aimed at the server's own address, which is in DNS history and certificate logs from before ADR-0013, still fills the uplink before the firewall sees a packet. The practical recovery is a new IP address from the provider, then the A records in Cloudflare changed to it (still proxied), then a re-run of `deploy-vpn.sh`. The client link names the host, not the address, so it does not change.
 
-If Cloudflare is blocked or throttled where a user is, the VPN is unreachable there: there is no second way in (flag 6 in `docs/censor-red-flags.md`).
+If Cloudflare is blocked or throttled where a user is, the VPN is unreachable there: today there is no second way in (flag 6 in `docs/censor-red-flags.md`). A fallback server reached directly is decided but not built (ADR-0018, "Fallback server" above).
 
 Secrets stay on the VPS, readable by root only:
 

@@ -31,6 +31,7 @@ The only way in, through Cloudflare on one domain, failed on a Russian mobile ne
 
 ## Decisions checked
 
+- ADR-0013's two other lines (80 and 443 from Cloudflare's ranges only, no per-address limits on 443) are scoped to the server behind Cloudflare since 2026-11-12; the second server admits 443 from anywhere.
 - ADR-0013, reworded by ADR-0018 (no way in on the server behind Cloudflare; a way in outside Cloudflare runs on a separate server, as a fallback): followed. The first server opens no port; the relay arrives through Cloudflare like any client.
 - ADR-0012, reworded by ADR-0018 (Reality cover site in the VPS's provider network; no own domain on a VPS address): followed, and checked by R-vpn-fallback-02.b.
 - ADR-0018 (the direct link is not the default; no clients while SSH is open to everyone): R-vpn-fallback-03.b and R-vps-baseline-08.
@@ -38,7 +39,7 @@ The only way in, through Cloudflare on one domain, failed on a Russian mobile ne
 - ADR-0004 (IPv6 off by kernel parameter), ADR-0005 (no `ufw limit` on SSH), ADR-0008 (no `freedom` outbound): followed on both servers.
 - ADR-0019 (the fallback has no way out of its own): R-vpn-fallback-04.c and 04.e.
 - ADR-0009 (WARP endpoint): does not apply to the second server, which has no WARP tunnel.
-- ADR-0015 (no browser `fp` and no `h2` in the client link): written for the HTTP/1.1 link through Cloudflare. A Reality link has to send a hello like a browser's, since it borrows a real site's name. The line needs wording that limits it to the Cloudflare link; proposed as part of this change. [TODO-CLARIFY: confirm that ADR-0015's line applies to the Cloudflare link only.]
+- ADR-0015 (no `h2` and no browser `fp` in a client link that goes through Cloudflare): does not apply to the direct Reality link, as the line says since it was reworded on 2026-11-12. A Reality link borrows a real site's name and sends a browser's hello.
 - ADR-0017 (names vetted from a mobile network; blocked names not reused): the fallback link carries a borrowed name, not one of ours. The same idea is applied to the address by R-vpn-fallback-06.
 
 ## Open questions

@@ -4,6 +4,7 @@
 - Date: 2026-11-10
 - Supersedes: none
 - Change: none
+- Note (2026-11-12): the transport is now VLESS over XHTTP behind Cloudflare, and the stack has grown (WARP, nginx, certbot, Docker). The current list is in `AGENTS.md` (ADR-0008, ADR-0012, ADR-0013).
 
 ## Context
 

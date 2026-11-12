@@ -46,6 +46,6 @@ The owner chose on 2026-11-12:
 
 ## Do not
 
-- Do not give clients a link to the server's own address, or any way in that does not pass through Cloudflare: the ISP then sees a hosting provider's address (flag 2). (ADR-0013)
-- Do not admit 80/tcp or 443/tcp from outside Cloudflare's published ranges: the server's address must not answer probes directly. (ADR-0013)
-- Do not limit connections per source address on port 443: every client arrives from a shared Cloudflare address. (ADR-0013)
+- Do not give clients a link to the address of the server behind Cloudflare, or open a second way in on that server: its address must stay unused and unanswering. A way in outside Cloudflare runs on a separate server and is handed out only as a fallback. (ADR-0013, reworded by ADR-0018)
+- On the server behind Cloudflare, do not admit 80/tcp or 443/tcp from outside Cloudflare's published ranges: that server's address must not answer probes directly. The fallback server admits 443/tcp from anywhere and answers as its cover site (ADR-0018). (ADR-0013)
+- On the server behind Cloudflare, do not limit connections per source address on port 443: every client arrives from a shared Cloudflare address. (ADR-0013)

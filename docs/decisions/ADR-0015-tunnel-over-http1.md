@@ -27,4 +27,4 @@ Phones on networks that drop HTTP/2 to these names connect again. Throughput is 
 
 ## Do not
 
-- Do not enable `http2` on nginx's listener, put `h2` in the client link's `alpn`, or set a browser `fp` (`chrome`, `firefox`, `safari`, `ios`, `edge`) in it: Russian mobile networks hang HTTP/2 to our names, and an `http2` listener answers an HTTP/1.1 tunnel client with raw HTTP/2 frames, while a browser `fp` makes the client offer `h2` anyway. (ADR-0015)
+- Do not enable `http2` on nginx's listener, and in a client link that goes through Cloudflare do not put `h2` in `alpn` or set a browser `fp` (`chrome`, `firefox`, `safari`, `ios`, `edge`): Russian mobile networks hang HTTP/2 to our names, and an `http2` listener answers an HTTP/1.1 tunnel client with raw HTTP/2 frames, while a browser `fp` makes the client offer `h2` anyway. The fallback's direct Reality link is not such a link. (ADR-0015)

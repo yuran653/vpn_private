@@ -4,6 +4,7 @@
 - Date: 2026-11-10
 - Supersedes: none
 - Change: `changes/archive/2026-11-10-harden-against-attacks/`
+- Note (2026-11-12): ADR-0018 requires SSH from listed addresses only on the fallback server, the alternative rejected below for the first server. R-vpn-server-10, cited under Consequences, left the spec with the port-443 limits.
 
 ## Context
 
