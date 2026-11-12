@@ -59,7 +59,14 @@ Lessons:
 
 Flags 1 and 2 are fixed (ADR-0012, ADR-0013). Fixing flags 5 and 6 would cover most of the remaining risk. Options mentioned so far, none decided:
 - SSH reachable only from known addresses, or only through a hidden path.
-- A second transport and spare IPs, so one block doesn't cut everyone off.
+- A second transport and spare IPs, so one block doesn't cut everyone off. Drafted as ADR-0018 (proposed, not accepted).
+
+Order proposed on 2026-11-12, each step still needing its own decision:
+
+1. A second transport: direct Reality on a separate VPS and address, with the Cloudflare path kept as the first one (ADR-0018).
+2. SSH closed to all but known addresses before that server goes up (flag 5).
+3. Spare domains on different registered domains, vetted with `scripts/check-name.sh` and kept unused.
+4. For Russia an entry relay inside the country; for China a host with a better route.
 
 Expected users: at most 20 to 30 during the test period (owner, 2026-11-12).
 
@@ -83,3 +90,27 @@ Measured from a phone (Termux, no VPN) after the key failed in Happ with the HTT
 Reading: the carrier cuts uploads of more than about 1 to 2 KB to any name under `casedigestai.com`, and the address does not matter. The tunnel needs uploads, so the key cannot connect on this network, whatever the transport settings. The cut follows the name, so a new domain is the first thing to try; whether a fresh name stays unflagged once it carries tunnel traffic is not known. Globalping probes on MTS, Rostelecom and Russian datacenter networks loaded the pages over HTTPS, but they ran GET requests only; uploads were not tested there, so it is not known whether other carriers cut them too.
 
 The domain is listed in `docs/blocked-names.txt`. A name is tried with `scripts/check-name.sh` from a phone on mobile data before it carries the tunnel (ADR-0017).
+
+## Assessment by country (2026-11-12)
+
+How the setup of ADR-0013 to ADR-0015 stands against each censor. Only the Russian row rests on our own measurements (the field observation above). The rest is general knowledge of each censor up to mid-2026, not tested from inside the country and not checked against current reports.
+
+What holds everywhere: a probe of the name gets a real site with a valid certificate; the server's own address answers only Cloudflare on 80 and 443, so blocking or probing that address does nothing; the wire shows ordinary TLS to Cloudflare, not VLESS. The weak point everywhere is flag 6: one domain, on one network, with one transport.
+
+| Country | Methods | Does the setup survive? |
+|---|---|---|
+| Russia (TSPU) | Filtering by the name in the TLS hello; throttling of Cloudflare and foreign hosting ranges since 2025; Cloudflare's encrypted hello (ECH) blocked; signatures for OpenVPN and WireGuard; whitelist-only mode on mobile networks during shutdowns. | No. Measured: Beeline cut uploads to every name under the domain. A new domain may work for a while. Nothing foreign works in whitelist mode. |
+| Iran | Name filtering and DNS poisoning; unknown protocols throttled, only DNS, HTTP and HTTPS pass freely; foreign hosting addresses blocked; some Cloudflare addresses throttled per ISP; TLS fingerprint filtering; national-intranet mode during shutdowns. | Probably, in normal times: a tunnel behind Cloudflare is among the most used methods there. Expect it to differ by ISP and to fail in a shutdown. |
+| China (GFW) | Name filtering with injected resets and DNS poisoning; IP blocking; active probing; detection of TLS inside TLS; encrypted SNI blocked; heavier blocking around sensitive dates. | Poorly. The free Cloudflare plan has no nodes in China, so the path is long and many Cloudflare addresses are throttled. A name with steady heavy traffic tends to be blocked. Probing is not the risk. |
+
+Hardening by country, none decided:
+
+- **Russia:** a second transport off Cloudflare (ADR-0018); an entry relay on a VPS inside Russia that forwards to this server, the only design with a chance in whitelist mode; spare domains on different registered domains, since all names under one domain were cut together.
+- **Iran:** let a user put a Cloudflare address that works on their ISP into the link, with host and name unchanged; hello fragmentation in the client (`fragment` in Xray); the other ports Cloudflare proxies (2053, 2083, 2087, 2096, 8443), which today's nginx and firewall do not open.
+- **China:** a direct transport on a host with a good route to China, which matters more than any obfuscation and which Thailand usually is not; a QUIC transport with port hopping as a further option, though UDP is often rate-limited; per-user names (flag 4).
+
+Also open:
+
+- Domain fronting is not available: Cloudflare refuses a request whose TLS name and Host header belong to different zones. Reality, which borrows a large site's name, is the practical replacement.
+- The link sends `fp=android` even from an iPhone (flag 8).
+- Cloudflare's free plan is not meant for proxying bulk non-web traffic; the account can be closed. [TODO-CLARIFY: check the current Cloudflare terms for this use.]
