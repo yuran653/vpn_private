@@ -79,3 +79,5 @@ Measured from a phone (Termux, no VPN) after the key failed in Happ with the HTT
 | Our name sent to `www.cloudflare.com`'s address, 10 KB POST | hangs |
 
 Reading: the carrier cuts uploads of more than about 1 to 2 KB to any name under `casedigestai.com`, and the address does not matter. The tunnel needs uploads, so the key cannot connect on this network, whatever the transport settings. The cut follows the name, so a new domain is the first thing to try; whether a fresh name stays unflagged once it carries tunnel traffic is not known. Globalping probes on MTS, Rostelecom and Russian datacenter networks loaded the pages over HTTPS, but they ran GET requests only; uploads were not tested there, so it is not known whether other carriers cut them too.
+
+The domain is listed in `docs/blocked-names.txt`. A name is tried with `scripts/check-name.sh` from a phone on mobile data before it carries the tunnel (ADR-0017).

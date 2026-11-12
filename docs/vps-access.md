@@ -134,3 +134,12 @@ ssh zcom-th 'hostname && curl -s ifconfig.co/country && uname -r'
 ```
 
 Expected: the hostname, a country, kernel `6.x`. Since 2026-11-10 `ifconfig.co` answers `Japan` for this address; the owner knows (ADR-0008). The host's own country no longer decides whether the exit is valid: clients leave through WARP, and `scripts/verify-vpn.sh` (R-vpn-server-12.b) fails when that exit is not in Thailand. If that check fails, stop and report.
+
+## Replacing the domain
+
+`casedigestai.com` is on `docs/blocked-names.txt` (blocked on Russian mobile networks, 2026-11-12), so the site and the link have to move to a new domain (ADR-0017). Order:
+
+1. Choose a domain used for nothing else.
+2. From a phone on mobile data in each target country, with no VPN, run `bash scripts/check-name.sh <name>` for the name that will carry the tunnel. Only a pass (exit 0) lets it go on; exit 2 means that network cannot judge it. The name must resolve through Cloudflare for the check to mean anything, so put the zone on Cloudflare (proxied, "Full (strict)") first.
+3. Change the names in `scripts/deploy-vpn.sh`, `scripts/verify-vpn.sh`, `scripts/verify-external.sh`, `site/docker-compose.yml`, `site/html/index.html`, `docs/how-it-works.html` and the spec, then run the deploy and both verify scripts. Every device imports the new link.
+
