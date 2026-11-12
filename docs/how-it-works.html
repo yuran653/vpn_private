@@ -74,7 +74,7 @@ code { background: var(--gold-soft); padding: 1px 5px; border-radius: 4px; overf
 
 /* Diagram */
 .diagram { overflow-x: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 18px 12px; }
-.diagram svg { display: block; width: 100%; min-width: 860px; height: auto; }
+.diagram svg { display: block; width: 100%; min-width: 880px; height: auto; }
 .d-node { fill: var(--panel); stroke: var(--line); stroke-width: 1.5; }
 .d-node.vps { stroke: var(--gold); stroke-width: 2; fill: var(--gold-soft); }
 .d-node.cf { stroke: var(--cf); stroke-width: 2; }
@@ -90,7 +90,7 @@ code { background: var(--gold-soft); padding: 1px 5px; border-radius: 4px; overf
 .d-arrow { fill: var(--muted); }
 .d-gold { fill: var(--gold); }
 .d-cf { fill: var(--cf); }
-.packet { fill: var(--gold); offset-path: path("M190 170 H810"); animation: travel 4.5s cubic-bezier(.55,.1,.45,.9) infinite; }
+.packet { fill: var(--gold); offset-path: path("M140 170 H810"); animation: travel 4.5s cubic-bezier(.55,.1,.45,.9) infinite; }
 @keyframes travel { 0% { offset-distance: 0%; opacity: 0; } 8% { opacity: 1; } 92% { opacity: 1; } 100% { offset-distance: 100%; opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .packet { display: none; } }
 .legend { display: flex; flex-wrap: wrap; gap: 18px; margin-top: 14px; font-size: 0.88rem; color: var(--muted); }
@@ -98,7 +98,7 @@ code { background: var(--gold-soft); padding: 1px 5px; border-radius: 4px; overf
 .sw { width: 22px; height: 4px; border-radius: 2px; display: inline-block; }
 
 /* Steps along the path */
-.steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+.steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
 .step { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 20px; display: grid; gap: 10px; align-content: start; min-width: 0; }
 .step .k { font: 500 0.75rem/1 var(--mono); color: var(--gold); letter-spacing: 0.08em; text-transform: uppercase; }
 .step p, .step li { font-size: 0.94rem; color: var(--muted); }
@@ -134,6 +134,7 @@ td.hidden { color: var(--muted); }
 .num .v { font: 800 1.9rem/1 var(--display); font-variant-numeric: tabular-nums; }
 .num .v small { font: 500 0.9rem var(--mono); color: var(--muted); margin-left: 4px; }
 .num .l { font-size: 0.88rem; color: var(--muted); }
+.nums .cap { font-size: 0.82rem; color: var(--muted); }
 
 /* Operator loop */
 .ops { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; counter-reset: op; }
@@ -172,16 +173,17 @@ a { color: var(--gold); }
 a:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
 </style>
 
+
 <main class="wrap">
 
   <header class="hero">
     <div class="eyebrow"><span>Personal VPS</span><span class="n">/</span><span>Thailand</span></div>
     <h1>One private road from your phone to the internet, by way of Bangkok</h1>
-    <p class="lede">A VLESS + XTLS‑Reality server on an Ubuntu VPS. To anyone watching the wire it looks like a visit to a small website that the server really hosts. Your traffic leaves through Cloudflare WARP in Thailand, and the server closes every leak it can control: DNS, IPv6, fingerprinting and panel discovery.</p>
+    <p class="lede">A VLESS server on an Ubuntu VPS, reached only through Cloudflare. To anyone watching the wire it looks like HTTPS to a small file‑sync site behind Cloudflare, one of millions. Your traffic leaves through Cloudflare WARP in Thailand, and the server closes every leak it can control: DNS, IPv6, fingerprinting and panel discovery.</p>
     <div class="facts">
       <span class="chip">Xray via 3x‑ui</span>
-      <span class="chip">VLESS · XTLS‑Vision · Reality</span>
-      <span class="chip">TCP 443</span>
+      <span class="chip">VLESS · XHTTP · inside HTTPS</span>
+      <span class="chip">Front: Cloudflare CDN</span>
       <span class="chip">Exit: Cloudflare WARP, BKK</span>
       <span class="chip">Profile: <span class="thai">กรุงเทพฯ</span> cloud.z.com</span>
     </div>
@@ -190,10 +192,10 @@ a:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
   <section class="slide" aria-labelledby="s-path">
     <div class="head">
       <div class="eyebrow"><span class="n">01</span><span>The path</span></div>
-      <h2 id="s-path">Four stops, one way out</h2>
+      <h2 id="s-path">Five stops, one way out</h2>
     </div>
-    <div class="diagram" role="img" aria-label="Diagram: your device connects over Reality on TCP 443 to the VPS in Thailand, which forwards everything through a WireGuard tunnel to Cloudflare's Bangkok site, which reaches the website. The ISP sees only TLS to status.casedigestai.com. A probe without the key gets the website the server hosts under that name.">
-      <svg viewBox="0 0 1000 350" xmlns="http://www.w3.org/2000/svg">
+    <div class="diagram" role="img" aria-label="Diagram: your device sends HTTPS to Cloudflare under the name files.casedigestai.com. Cloudflare opens its own HTTPS connection to the VPS in Thailand, where nginx hands one secret path to Xray and serves the cover site for every other path. Xray forwards everything through a WireGuard tunnel to Cloudflare WARP in Bangkok, which reaches the website. The ISP sees only TLS to a Cloudflare address. A probe on any other path gets the cover site; a probe sent straight to the VPS address gets no answer.">
+      <svg viewBox="0 0 950 330" xmlns="http://www.w3.org/2000/svg">
         <defs>
           <marker id="ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
             <path d="M0 0 L10 5 L0 10 z" class="d-arrow"/>
@@ -201,58 +203,69 @@ a:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
         </defs>
 
         <!-- observer over link 1 -->
-        <rect x="150" y="12" width="190" height="56" rx="8" class="d-note"/>
-        <text x="162" y="34" class="d-title" style="font-size:13px">Your ISP / Wi‑Fi sees</text>
-        <text x="162" y="54" class="d-mono">TLS 1.3 → status.casedigestai.com</text>
-        <path d="M240 68 V150" class="d-dash"/>
+        <rect x="20" y="12" width="320" height="56" rx="8" class="d-note"/>
+        <text x="32" y="34" class="d-title" style="font-size:13px">Your ISP / Wi‑Fi sees</text>
+        <text x="32" y="54" class="d-mono">TLS → Cloudflare, files.casedigestai.com</text>
+        <path d="M175 68 V155" class="d-dash"/>
 
         <!-- links -->
-        <path d="M190 170 H290" class="d-link"/>
-        <path d="M460 170 H560" class="d-link"/>
-        <path d="M730 170 H810" class="d-link cf"/>
+        <path d="M140 170 H210" class="d-link"/>
+        <path d="M340 170 H410" class="d-link"/>
+        <path d="M540 170 H610" class="d-link"/>
+        <path d="M740 170 H810" class="d-link cf"/>
         <circle r="6" class="packet"/>
 
-        <text x="240" y="200" text-anchor="middle" class="d-tag">Reality :443</text>
-        <text x="240" y="216" text-anchor="middle" class="d-mono">~220 ms</text>
-        <text x="510" y="200" text-anchor="middle" class="d-tag">WireGuard</text>
-        <text x="510" y="216" text-anchor="middle" class="d-mono">1.4 ms</text>
-        <text x="770" y="200" text-anchor="middle" class="d-tag">IPv4</text>
+        <text x="175" y="196" text-anchor="middle" class="d-tag">HTTPS</text>
+        <text x="175" y="212" text-anchor="middle" class="d-mono">XHTTP</text>
+        <text x="375" y="196" text-anchor="middle" class="d-tag">HTTPS</text>
+        <text x="375" y="212" text-anchor="middle" class="d-mono">strict</text>
+        <text x="575" y="196" text-anchor="middle" class="d-tag">WG</text>
+        <text x="575" y="212" text-anchor="middle" class="d-mono">1.4 ms</text>
+        <text x="775" y="196" text-anchor="middle" class="d-tag">IPv4</text>
 
         <!-- nodes -->
-        <rect x="20" y="110" width="170" height="120" rx="12" class="d-node"/>
-        <text x="38" y="140" class="d-title">Your device</text>
-        <text x="38" y="162" class="d-sub">Happ, one vless:// link</text>
-        <text x="38" y="182" class="d-mono">fp: chrome</text>
-        <text x="38" y="200" class="d-mono">flow: vision</text>
+        <rect x="10" y="110" width="130" height="120" rx="12" class="d-node"/>
+        <text x="24" y="140" class="d-title">Your device</text>
+        <text x="24" y="162" class="d-sub">Happ, one link</text>
+        <text x="24" y="182" class="d-mono">fp: chrome</text>
+        <text x="24" y="200" class="d-mono">rotates, pads</text>
 
-        <rect x="290" y="110" width="170" height="120" rx="12" class="d-node vps"/>
-        <text x="308" y="140" class="d-title">VPS, Thailand</text>
-        <text x="308" y="162" class="d-sub">Xray in 3x‑ui</text>
-        <text x="308" y="182" class="d-mono">checks the key</text>
-        <text x="308" y="200" class="d-mono">routes, no logs</text>
+        <rect x="210" y="110" width="130" height="120" rx="12" class="d-node cf"/>
+        <text x="224" y="140" class="d-title">Cloudflare</text>
+        <text x="224" y="162" class="d-sub">CDN, nearest site</text>
+        <text x="224" y="182" class="d-mono">ends your TLS</text>
+        <text x="224" y="200" class="d-mono">new TLS to VPS</text>
 
-        <rect x="560" y="110" width="170" height="120" rx="12" class="d-node cf"/>
-        <text x="578" y="140" class="d-title">Cloudflare BKK</text>
-        <text x="578" y="162" class="d-sub">WARP exit</text>
-        <text x="578" y="182" class="d-mono">IP placed in TH</text>
-        <text x="578" y="200" class="d-mono">188.114.97.1:2408</text>
+        <rect x="410" y="110" width="130" height="120" rx="12" class="d-node vps"/>
+        <text x="424" y="140" class="d-title">VPS, Thailand</text>
+        <text x="424" y="162" class="d-sub">nginx holds :443</text>
+        <text x="424" y="182" class="d-mono">1 path → Xray</text>
+        <text x="424" y="200" class="d-mono">else → site</text>
 
-        <rect x="810" y="110" width="170" height="120" rx="12" class="d-node"/>
-        <text x="828" y="140" class="d-title">The website</text>
-        <text x="828" y="162" class="d-sub">sees a Cloudflare</text>
-        <text x="828" y="180" class="d-sub">address in Thailand</text>
+        <rect x="610" y="110" width="130" height="120" rx="12" class="d-node cf"/>
+        <text x="624" y="140" class="d-title">WARP, BKK</text>
+        <text x="624" y="162" class="d-sub">Cloudflare exit</text>
+        <text x="624" y="182" class="d-mono">IP placed in TH</text>
+        <text x="624" y="200" class="d-mono">188.114.97.1</text>
 
-        <!-- prober branch -->
-        <path d="M375 230 V290 H560" class="d-dash" marker-end="url(#ah)"/>
-        <text x="388" y="266" class="d-mono">probe without key</text>
-        <rect x="565" y="270" width="230" height="44" rx="8" class="d-note"/>
-        <text x="580" y="297" class="d-mono" style="fill:var(--ink)">own site, served on the VPS</text>
+        <rect x="810" y="110" width="130" height="120" rx="12" class="d-node"/>
+        <text x="824" y="140" class="d-title">The website</text>
+        <text x="824" y="162" class="d-sub">sees a Cloudflare</text>
+        <text x="824" y="180" class="d-sub">address in Thailand</text>
+
+        <!-- probes -->
+        <path d="M275 274 V234" class="d-dash" marker-end="url(#ah)"/>
+        <rect x="140" y="274" width="270" height="44" rx="8" class="d-note"/>
+        <text x="154" y="301" class="d-mono" style="fill:var(--ink)">probe, other path → cover site</text>
+        <path d="M475 274 V234" class="d-dash" marker-end="url(#ah)"/>
+        <rect x="430" y="274" width="300" height="44" rx="8" class="d-note"/>
+        <text x="444" y="301" class="d-mono" style="fill:var(--ink)">probe to the VPS address → no answer</text>
       </svg>
     </div>
     <div class="legend">
-      <span><i class="sw" style="background:var(--gold)"></i>Encrypted, inside the tunnel</span>
+      <span><i class="sw" style="background:var(--gold)"></i>Encrypted, the tunnel inside</span>
       <span><i class="sw" style="background:var(--cf)"></i>Leaves Cloudflare to the site</span>
-      <span><i class="sw" style="background:var(--muted)"></i>What an outsider can observe</span>
+      <span><i class="sw" style="background:var(--muted)"></i>What an outsider can observe or try</span>
     </div>
   </section>
 
@@ -264,16 +277,26 @@ a:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
     <div class="steps">
       <article class="step">
         <span class="k">1 · Device</span>
-        <h3>Looks like a Chrome visit</h3>
-        <p>Happ opens TCP 443 to the VPS and sends a TLS 1.3 hello with Chrome's fingerprint and the name <code>status.casedigestai.com</code>. Your traffic rides inside, split by XTLS‑Vision so its shape does not stand out.</p>
+        <h3>An HTTPS visit to a Cloudflare site</h3>
+        <p>Happ looks up <code>files.casedigestai.com</code>, gets a Cloudflare address, and opens TLS to it with Chrome's fingerprint. Your traffic travels as VLESS in the bodies of ordinary HTTP requests (XHTTP), inside that HTTPS. The VPS address never appears on your network.</p>
       </article>
       <article class="step">
-        <span class="k">2 · Reality</span>
-        <h3>Key or cover site</h3>
-        <p>The server checks the hello for the client's short ID and X25519 key. With it, the tunnel opens. Without it, the connection is handed to the web server on the same VPS, which shows the site's landing page with its own valid certificate (ADR-0012).</p>
+        <span class="k">2 · Shape</span>
+        <h3>Short connections, padded requests</h3>
+        <p>The link tells the client to stop putting new sessions on a connection after 2 to 5 minutes or 32 to 64 sessions, and to pad every request with 100 to 1000 random bytes. The server pads its responses the same way. Long use looks like many short browser connections, not one that lasts an hour (ADR‑0014).</p>
       </article>
       <article class="step">
-        <span class="k">3 · Routing</span>
+        <span class="k">3 · Cloudflare</span>
+        <h3>Front door</h3>
+        <p>Cloudflare ends your TLS at its site nearest to you, then opens its own TLS to the VPS and checks the server's Let's Encrypt certificate ("Full (strict)"). The VPS firewall admits ports 80 and 443 only from Cloudflare's published ranges (ADR‑0013).</p>
+      </article>
+      <article class="step">
+        <span class="k">4 · nginx</span>
+        <h3>One path or the cover site</h3>
+        <p>nginx holds port 443. Requests for one random path, kept on the server and in your link, go to the Xray inbound on loopback. Every other path gets the CaseDigest AI site from a Docker container on loopback (ADR‑0012).</p>
+      </article>
+      <article class="step">
+        <span class="k">5 · Routing</span>
         <h3>Three rules</h3>
         <ul>
           <li>Port 53 to any address → answered by the server's own DNS</li>
@@ -282,7 +305,7 @@ a:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
         </ul>
       </article>
       <article class="step">
-        <span class="k">4 · Exit</span>
+        <span class="k">6 · Exit</span>
         <h3>Out through Bangkok</h3>
         <p>Xray runs WireGuard to WARP in user space, IPv4 only, MTU 1280. Cloudflare's Bangkok site is 1.4 ms away. Sites see a WARP address placed in Thailand, so YouTube Music works.</p>
       </article>
@@ -330,27 +353,33 @@ colo=BKK   <span class="c"># R-vpn-server-12.f</span></div>
     <div class="head">
       <div class="eyebrow"><span class="n">04</span><span>Exposure</span></div>
       <h2 id="s-who">Who sees what</h2>
-      <p class="lede">No single party sees both who you are and where you go, except you.</p>
+      <p class="lede">Your ISP, the VPS provider and the websites each see only part of the picture. Cloudflare is the one party that stands at both ends: it is the front door and the exit.</p>
     </div>
     <div class="table-wrap">
       <table>
         <thead><tr><th scope="col">Observer</th><th scope="col">Sees</th><th scope="col">Does not see</th></tr></thead>
         <tbody>
           <tr><th scope="row">Your ISP or Wi‑Fi</th>
-            <td class="sees"><i class="dot no"></i>A TLS 1.3 connection to a Thai host named <span class="mono">status.casedigestai.com</span></td>
-            <td class="hidden"><i class="dot ok"></i>Sites you visit, your DNS lookups, that it is a VPN</td></tr>
-          <tr><th scope="row">A censor probing :443</th>
-            <td class="sees"><i class="dot no"></i>The site's own certificate and landing page</td>
-            <td class="hidden"><i class="dot ok"></i>Any sign of a proxy; the panel (closed to the internet)</td></tr>
+            <td class="sees"><i class="dot no"></i>A TLS connection to a Cloudflare address with the name <span class="mono">files.casedigestai.com</span>, and its timing and volume</td>
+            <td class="hidden"><i class="dot ok"></i>Sites you visit, your DNS lookups, the VPS address, that it is a VPN</td></tr>
+          <tr><th scope="row">A censor probing the name</th>
+            <td class="sees"><i class="dot no"></i>The CaseDigest AI file‑sync site, with a valid certificate, behind Cloudflare</td>
+            <td class="hidden"><i class="dot ok"></i>The tunnel path; the panel (closed to the internet)</td></tr>
+          <tr><th scope="row">A censor probing the VPS address</th>
+            <td class="sees"><i class="dot no"></i>An SSH port; ports 80 and 443 do not answer</td>
+            <td class="hidden"><i class="dot ok"></i>The site, the certificate, the tunnel</td></tr>
+          <tr><th scope="row">Cloudflare, front door</th>
+            <td class="sees"><i class="dot no"></i>Your device's address, timing and volume, the tunnel path. It decrypts the outer HTTPS, so it could read the VLESS headers: client ID and the name and port of each destination</td>
+            <td class="hidden"><i class="dot ok"></i>The contents of HTTPS sites you visit, which stay encrypted inside</td></tr>
           <tr><th scope="row">The VPS provider</th>
-            <td class="sees"><i class="dot no"></i>Encrypted traffic in from you, WireGuard UDP out to Cloudflare</td>
-            <td class="hidden"><i class="dot ok"></i>Destinations and DNS, both inside encryption</td></tr>
+            <td class="sees"><i class="dot no"></i>HTTPS in from Cloudflare addresses, WireGuard UDP out to Cloudflare</td>
+            <td class="hidden"><i class="dot ok"></i>Your address, destinations and DNS</td></tr>
           <tr><th scope="row">The server itself</th>
             <td class="sees"><i class="dot no"></i>Traffic totals in the panel</td>
-            <td class="hidden"><i class="dot ok"></i>No access log and no DNS log are kept</td></tr>
-          <tr><th scope="row">Cloudflare</th>
+            <td class="hidden"><i class="dot ok"></i>No proxy access log, no DNS log, no nginx or site access log</td></tr>
+          <tr><th scope="row">Cloudflare, WARP exit</th>
             <td class="sees"><i class="dot no"></i>Destinations, coming from the VPS address</td>
-            <td class="hidden"><i class="dot ok"></i>Your device's address</td></tr>
+            <td class="hidden"><i class="dot ok"></i>Your device's address, unless Cloudflare links it to the front‑door side</td></tr>
           <tr><th scope="row">Websites</th>
             <td class="sees"><i class="dot no"></i>A Cloudflare WARP IPv4 address in Thailand</td>
             <td class="hidden"><i class="dot ok"></i>Your address and the VPS address</td></tr>
@@ -379,15 +408,15 @@ colo=BKK   <span class="c"># R-vpn-server-12.f</span></div>
       </article>
       <article class="guard">
         <span class="risk">DPI fingerprinting</span>
-        <h3>Indistinguishable from HTTPS</h3>
-        <p>Reality borrows a real site's TLS 1.3 handshake, so there is no certificate of its own to spot. Probes get the real site.</p>
-        <span class="req">R‑vpn‑server‑04 · ADR‑0003</span>
+        <h3>Ordinary HTTPS to Cloudflare</h3>
+        <p>Your ISP sees a Chrome‑like TLS hello to a Cloudflare address, the same addresses that serve millions of sites. Inside, the tunnel is plain HTTP requests, rotated across short connections and padded, so neither a hosting address nor one hour‑long connection gives it away.</p>
+        <span class="req">R‑vpn‑server‑17 · 18 · ADR‑0013 · ADR‑0014</span>
       </article>
       <article class="guard">
-        <span class="risk">Panel discovery</span>
-        <h3>Panel on loopback only</h3>
-        <p>3x‑ui listens on 127.0.0.1 and is reached through <code>ssh -L</code>. Only SSH and 443 are open to the internet.</p>
-        <span class="req">R‑vpn‑server‑05 · ADR‑0002</span>
+        <span class="risk">Panel and server discovery</span>
+        <h3>Nothing to find</h3>
+        <p>3x‑ui and the Xray inbound listen on 127.0.0.1; the panel is reached through <code>ssh -L</code>. Ports 80 and 443 answer only Cloudflare, so the VPS address shows no site and no tunnel. Through Cloudflare, every path but one is the cover site.</p>
+        <span class="req">R‑vpn‑server‑04 · 05 · ADR‑0002</span>
       </article>
       <article class="guard">
         <span class="risk">Exit through the VPS address</span>
@@ -398,7 +427,7 @@ colo=BKK   <span class="c"># R-vpn-server-12.f</span></div>
       <article class="guard">
         <span class="risk">Activity record</span>
         <h3>Nothing to hand over</h3>
-        <p>Xray's access log and DNS log are off. Keys, tokens and the client link sit in root‑only files and never appear in script output.</p>
+        <p>Xray's access log and DNS log are off, and neither nginx nor the site container writes an access log. Keys, tokens and the client link sit in root‑only files and never appear in script output.</p>
         <span class="req">R‑vpn‑server‑06 · R‑vpn‑server‑09</span>
       </article>
     </div>
@@ -411,16 +440,18 @@ colo=BKK   <span class="c"># R-vpn-server-12.f</span></div>
     </div>
     <div class="split">
       <ul class="list">
-        <li><b>Firewall</b><span>ufw denies all incoming except SSH and 443/tcp.</span></li>
-        <li><b>Flood limits</b><span>Port 443: 1000 open connections or 100 new per second (burst 300) per address. SSH: 10 open or 30 per minute. SYN cookies on, backlog 4096.</span></li>
+        <li><b>Firewall</b><span>ufw denies all incoming except SSH from anywhere, and 80/tcp and 443/tcp from Cloudflare's published IPv4 ranges, refreshed on each deploy.</span></li>
+        <li><b>Flood limits</b><span>SSH: 10 open or 30 new per minute per address. Port 443 has no per‑address limit, because every client arrives from a shared Cloudflare address; Cloudflare absorbs floods first. SYN cookies on, backlog 4096.</span></li>
         <li><b>SSH</b><span>Keys only, no root, no passwords. Unauthenticated connections drop after 30 s. fail2ban watches the rest.</span></li>
+        <li><b>Web</b><span>nginx with a Let's Encrypt certificate for <span class="mono">casedigestai.com</span>, <span class="mono">files.</span> and <span class="mono">status.</span>, renewed by certbot. The site runs in Docker on 127.0.0.1.</span></li>
         <li><b>Updates</b><span>unattended‑upgrades installs security fixes and reboots at 04:00 when one needs it.</span></li>
-        <li><b>Speed</b><span>BBR with fq pacing, 16 MB socket buffers, no slow start after idle. Tuned for the long path to your device.</span></li>
+        <li><b>Speed</b><span>BBR with fq pacing, 16 MB socket buffers, no slow start after idle.</span></li>
       </ul>
       <div class="nums" aria-label="Measured performance">
         <div class="num"><span class="v">87<small>Mbit/s</small></span><span class="l">Through tunnel and WARP, measured on the server. 92 Mbit/s direct.</span></div>
         <div class="num"><span class="v">37–48<small>Mbit/s</small></span><span class="l">Download on the owner's Mac through the VPN, after the move to Bangkok.</span></div>
         <div class="num"><span class="v">1.4<small>ms</small></span><span class="l">From the VPS to Cloudflare Bangkok. The Singapore endpoint was 27 ms.</span></div>
+        <p class="cap">Measured on 2026‑11‑10, on the earlier direct link, before clients moved behind Cloudflare. Not measured again since.</p>
       </div>
     </div>
   </section>
@@ -438,7 +469,7 @@ colo=BKK   <span class="c"># R-vpn-server-12.f</span></div>
       </div>
       <div class="op">
         <h3>Deploy</h3>
-        <p>Installs a pinned, checksummed 3x‑ui, registers WARP once and builds the inbound. Safe to re‑run: keys and link stay the same.</p>
+        <p>Installs a pinned, checksummed 3x‑ui, registers WARP once, builds the XHTTP inbound, nginx, the certificate and the cover site, and loads Cloudflare's ranges into the firewall. Safe to re‑run: the client ID and path stay the same.</p>
         <div class="term">scripts/deploy-vpn.sh</div>
       </div>
       <div class="op">
@@ -452,6 +483,6 @@ scripts/verify-baseline.sh</div>
   </section>
 
   <footer>
-    Built from <span class="mono">specs/vpn-server</span>, <span class="mono">specs/vps-baseline</span> and ADR‑0002 to ADR‑0011. Measurements from 2026‑11‑10.
+    Built from <span class="mono">specs/vpn-server</span>, <span class="mono">specs/vps-baseline</span> and ADR‑0002 to ADR‑0014. Updated 2026‑11‑12; speed figures from 2026‑11‑10.
   </footer>
 </main>
