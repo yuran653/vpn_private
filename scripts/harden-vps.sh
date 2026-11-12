@@ -11,12 +11,22 @@
 #      unauthenticated connections closed after 30 seconds
 #   6. SYN flood settings in the kernel
 #   7. per-address limits on new SSH connections (ADR-0005)
+# Added by the change add-fallback-reality-server:
+#   8. on request, the SSH port admitted from listed addresses only (ADR-0018)
 #
 # Usage, on the VPS as root or via sudo:
-#   sudo -n bash harden-vps.sh <ADMIN_IP>
+#   sudo -n bash harden-vps.sh <ADMIN_IP> [--ssh-from <addr>[,<addr>...]]
 #
 # ADMIN_IP is the operator's current public IPv4 address. It is passed on
 # every run and never stored in this repository.
+#
+# --ssh-from closes the SSH port to everyone but the listed IPv4 addresses or
+# networks (1.2.3.4 or 1.2.3.0/24). The script refuses a list that leaves out
+# the address of an SSH session that is open while it runs, so it cannot lock
+# out the session that runs it. Without the option the port is admitted from
+# anywhere, and address rules from an earlier run are removed. If the listed
+# address is lost (a home address that changed), the way back in is the
+# provider's console.
 #
 # Safe to re-run. Overwrites /etc/fail2ban/jail.local, the two sshd drop-in
 # files and the sysctl file, and replaces its own marked block in
@@ -45,6 +55,41 @@ ADMIN_IP=${1:-}
 [ -n "$ADMIN_IP" ] || die "ADMIN_IP argument is required"
 printf '%s' "$ADMIN_IP" | grep -Eq '^([0-9]{1,3}\.){3}[0-9]{1,3}$' \
     || die "ADMIN_IP must be an IPv4 address"
+
+# Optional list of sources for the SSH port, one per line once normalised: a
+# single address is written without a prefix, the way ufw lists it.
+readonly NORMALISE_SOURCES='
+import ipaddress, sys
+out = []
+for item in sys.argv[1].split(","):
+    try:
+        net = ipaddress.IPv4Network(item.strip(), strict=True)
+    except ValueError:
+        sys.exit(1)
+    out.append(str(net.network_address) if net.prefixlen == 32 else str(net))
+print("\n".join(sorted(set(out))))
+'
+# True when every address after the first argument is inside a listed source.
+readonly ALL_LISTED='
+import ipaddress, sys
+nets = [ipaddress.ip_network(n) for n in sys.argv[1].split()]
+def listed(peer):
+    try:
+        return any(ipaddress.ip_address(peer) in n for n in nets)
+    except ValueError:
+        return False
+sys.exit(0 if all(listed(p) for p in sys.argv[2:]) else 1)
+'
+SSH_SOURCES=""
+case "${2:-}" in
+    "") ;;
+    --ssh-from)
+        [ -n "${3:-}" ] || die "--ssh-from needs a list of IPv4 addresses"
+        SSH_SOURCES=$(python3 -I -c "$NORMALISE_SOURCES" "$3") \
+            || die "--ssh-from takes IPv4 addresses or networks separated by commas"
+        ;;
+    *) die "unknown argument: $2" ;;
+esac
 
 # 1. Hostname resolution.
 if ! grep -qw "$(hostname)" /etc/hosts; then
@@ -85,6 +130,16 @@ SSH_PORT=$(sshd -T | awk '$1 == "port" { print $2 }')
 [ -n "$SSH_PORT" ] || die "could not read the SSH port from sshd -T"
 log "SSH port is $SSH_PORT"
 
+# 2c. Lockout guard for --ssh-from, before anything in the firewall changes:
+#     every SSH session open right now must come from a listed source.
+if [ -n "$SSH_SOURCES" ]; then
+    peers=$(ss -Htn state established "( sport = :$SSH_PORT )" | awk '{print $4}' \
+        | sed -E 's/:[0-9]+$//; s/^\[(::ffff:)?//; s/\]$//' | sort -u | tr '\n' ' ')
+    # shellcheck disable=SC2086
+    python3 -I -c "$ALL_LISTED" "$SSH_SOURCES" $peers \
+        || die "an open SSH session comes from an address that --ssh-from does not list; nothing in the firewall changed"
+fi
+
 # 3. fail2ban, with the operator's IP exempt from bans.
 DEBIAN_FRONTEND=noninteractive apt-get update -qq
 DEBIAN_FRONTEND=noninteractive apt-get install -y -qq fail2ban
@@ -107,11 +162,31 @@ fail2ban-client status sshd >/dev/null
 log "fail2ban running with sshd jail"
 
 # 4. Firewall. SSH is allowed before ufw is enabled, so this cannot lock out the session.
-ufw allow "${SSH_PORT}/tcp" comment 'SSH'
+#    With --ssh-from the port is allowed from the listed sources only. The rules
+#    that are wanted are added first and the others are deleted after, so there
+#    is no moment without a rule for the operator.
+if [ -n "$SSH_SOURCES" ]; then
+    for src in $SSH_SOURCES; do
+        ufw allow proto tcp from "$src" to any port "$SSH_PORT" comment 'SSH'
+    done
+else
+    ufw allow "${SSH_PORT}/tcp" comment 'SSH'
+fi
 ufw default deny incoming
 ufw default allow outgoing
 ufw --force enable
-log "ufw enabled"
+for src in $(ufw status | awk -v p="${SSH_PORT}/tcp" '$1 == p && $2 == "ALLOW" { print $3 }' | sort -u); do
+    if [ "$src" = Anywhere ]; then
+        if [ -n "$SSH_SOURCES" ]; then ufw --force delete allow "${SSH_PORT}/tcp"; fi
+    elif ! printf '%s\n' "$SSH_SOURCES" | grep -qxF "$src"; then
+        ufw --force delete allow proto tcp from "$src" to any port "$SSH_PORT"
+    fi
+done
+if [ -n "$SSH_SOURCES" ]; then
+    log "ufw enabled; SSH admitted from the listed sources only"
+else
+    log "ufw enabled; SSH admitted from anywhere"
+fi
 
 # 5. SYN flood settings. Cookies keep the listener answering when the backlog
 #    is full; the larger backlog and fewer SYN-ACK retries make it fill later

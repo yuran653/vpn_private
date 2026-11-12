@@ -44,6 +44,8 @@ ssh zcom-th 'sudo -n bash /tmp/verify-baseline.sh; rm -f /tmp/harden-vps.sh /tmp
 
 After the script reloads sshd and ufw, the second `ssh` above is the login check that rule 4 asks for.
 
+To close the SSH port to everyone but known addresses (ADR-0018; required on the fallback server, not used on the first one), add `--ssh-from <addr>[,<addr>...]` to `harden-vps.sh` and pass the same option to `verify-baseline.sh`. The script refuses a list that leaves out an SSH session that is open while it runs. If the listed address is lost, the way back in is the provider's console. Not run on a VPS yet (2026-11-12).
+
 One address may hold 10 SSH connections at once and open 30 per minute (ADR-0005). A loop that opens more than that from your own address is dropped until the rate falls; wait a minute and retry.
 
 The change records are in `changes/archive/2026-11-10-apply-vps-baseline/` and `changes/archive/2026-11-10-harden-against-attacks/`.
