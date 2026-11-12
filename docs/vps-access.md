@@ -55,11 +55,13 @@ The change records are in `changes/archive/2026-11-10-apply-vps-baseline/` and `
 `scripts/deploy-vpn.sh` installs 3x-ui and configures the VLESS server, reached by clients only through Cloudflare (ADR-0013). Every site name must be proxied by Cloudflare before it runs. Run the baseline script first. It takes no arguments and prints no secret:
 
 ```bash
-scp -r scripts/deploy-vpn.sh scripts/verify-vpn.sh site zcom-th:/tmp/
+scp -r scripts/deploy-vpn.sh scripts/verify-vpn.sh scripts/lib site zcom-th:/tmp/
 ssh zcom-th 'sudo -n bash /tmp/deploy-vpn.sh'
-ssh zcom-th 'sudo -n bash /tmp/verify-vpn.sh; sudo -n rm -rf /tmp/deploy-vpn.sh /tmp/verify-vpn.sh /tmp/site'
+ssh zcom-th 'sudo -n bash /tmp/verify-vpn.sh; sudo -n rm -rf /tmp/deploy-vpn.sh /tmp/verify-vpn.sh /tmp/lib /tmp/site'
 bash scripts/verify-external.sh
 ```
+
+The deploy script reads the host steps it shares with the fallback server from `scripts/lib/host-common.sh`, so the `lib` folder must be copied next to it. It also issues a second client, `relay`, for the fallback server, and writes that link to `/root/vpn/relay-link.txt` (ADR-0019). The split into `lib/` and the `relay` client have not run on a server yet (2026-11-12).
 
 After ADR-0015 the client link carries `alpn=http/1.1` and `fp=android` and nginx passes the tunnel path with `proxy_pass`. A re-run of the deploy script rewrites the link file; every device must import the new link. The earlier link (`h2,http/1.1`) keeps working where HTTP/2 is not blocked.
 
@@ -71,6 +73,49 @@ The deploy script also installs pending security updates, which takes several mi
 ssh zcom-th 'sudo -n sh -c "install -d -m 700 /root/vpn && nohup bash /tmp/deploy-vpn.sh > /root/vpn/deploy-run.log 2>&1 &"'
 ssh zcom-th 'sudo -n tail /root/vpn/deploy-run.log'      # repeat until it prints "[deploy] done"
 ```
+
+## Fallback server
+
+A second server on its own VPS, reached directly with Reality, for networks where the link through Cloudflare fails (ADR-0018). It is an entry only: it forwards everything to the first server through Cloudflare, so the exit is the same (ADR-0019). Users get its link only as a fallback. The scripts below are written but have not run on a server yet (2026-11-12); the change `changes/add-fallback-reality-server/` is still open.
+
+Its SSH alias is `vpn-fallback` here. Its address and its cover name are not written into this repo.
+
+Before a candidate VPS is kept, try its address from a phone on mobile data in Russia, with no VPN. Before the server is deployed, point the check at the cover site's own address; it then shows how that network treats the provider's range:
+
+```bash
+bash scripts/check-host.sh <address> <cover name>      # exit 0 pass, 1 fail, 2 cannot judge
+```
+
+The cover name is a third-party site hosted in the same provider network as the VPS, one that answers TLS 1.3. Never one of the owner's names.
+
+Baseline first, with SSH closed to everyone but the listed addresses. `deploy-fallback.sh` refuses to run otherwise:
+
+```bash
+scp -r scripts/harden-vps.sh scripts/verify-baseline.sh scripts/deploy-fallback.sh scripts/verify-fallback.sh scripts/lib vpn-fallback:/tmp/
+ssh vpn-fallback 'sudo -n bash /tmp/harden-vps.sh <YOUR_IP> --ssh-from <YOUR_IP>'
+ssh vpn-fallback 'sudo -n bash /tmp/verify-baseline.sh --ssh-from <YOUR_IP>'
+```
+
+Move the relay link from the first server to the second without printing it or storing it on the workstation:
+
+```bash
+ssh zcom-th 'sudo -n cat /root/vpn/relay-link.txt' | ssh vpn-fallback 'sudo -n sh -c "install -d -m 700 /root/vpn && umask 077 && cat > /root/vpn/relay-link.txt"'
+```
+
+Deploy detached, reboot once when the script asks for it, then verify from the inside and from the workstation:
+
+```bash
+ssh vpn-fallback 'sudo -n sh -c "nohup bash /tmp/deploy-fallback.sh <cover name> > /root/vpn/deploy-run.log 2>&1 &"'
+ssh vpn-fallback 'sudo -n tail /root/vpn/deploy-run.log'      # repeat until it prints "[fallback] done"
+ssh vpn-fallback 'sudo -n bash /tmp/verify-fallback.sh'
+bash scripts/verify-external.sh zcom-th vpn-fallback
+```
+
+- The cover name is needed on the first run only. Passing a different one later changes the cover site and the client link.
+- The fallback link is in `/root/vpn/vless-link.txt` on that server. It names the server's address, so a new address means a new link.
+- When the first server's domain is replaced, its relay link changes: move the new one over and run `deploy-fallback.sh` again. The users' fallback link does not change.
+- When the first server is down, the fallback is down too. It answers a block, not an outage.
+- `verify-external.sh` asks Team Cymru's public DNS service which network the fallback's address belongs to, which names that address to the service.
 
 ## Cover site
 
@@ -117,6 +162,7 @@ Secrets stay on the VPS, readable by root only:
 | Panel user, password, port, path and API token | `/etc/x-ui/install-result.env` |
 | Installer output | `/root/vpn/install.log` |
 | WARP registration (private key, device id, token) | `/root/vpn/warp.json` |
+| Relay link for the fallback server (ADR-0019) | `/root/vpn/relay-link.txt`, on both servers |
 | Original netplan files | `/root/vpn/netplan-backup/` |
 
 To show the client link: `ssh zcom-th 'sudo -n cat /root/vpn/vless-link.txt'`. Do not paste it into the repo (rule 2).

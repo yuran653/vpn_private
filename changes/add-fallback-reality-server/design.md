@@ -28,7 +28,7 @@ New modules or dependencies between modules: none. `docs/architecture.md` lists 
 ## Contracts and data
 
 - `harden-vps.sh <ADMIN_IP> [--ssh-from <addr>[,<addr>...]]`. Without the option nothing changes for existing use.
-- State on the second server, root-only, in `/root/vpn/`: `vless-link.txt`, `reality.json` (key pair, short ID, cover name), `relay-link.txt`.
+- State on the second server, root-only, in `/root/vpn/`: `vless-link.txt` and `relay-link.txt`. The Reality key pair, the short ID and the cover name live in the panel's inbound, as on the first deployment; there is no separate file for them.
 - State added on the first server, root-only: `/root/vpn/relay-link.txt`.
 - The second server's address and cover name are not written into the repo: the address identifies the server to anyone who reads the repo's history. The scripts read them from the SSH alias and from the server.
 - The fallback link: `vless://<id>@<address>:443?security=reality&sni=<cover>&pbk=<key>&sid=<short id>&flow=xtls-rprx-vision&type=tcp&fp=<fp>#<profile>`.
