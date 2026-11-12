@@ -123,7 +123,9 @@ The server is the website of `casedigestai.com`, `files.casedigestai.com` and `s
 
 - Cloudflare holds the domain's DNS and proxies every name (orange cloud, SSL mode "Full (strict)"). Clients and visitors connect to Cloudflare; Cloudflare connects to the server.
 - nginx on the host answers on port 80 (certificate challenge, redirect to HTTPS) and on port 443 with the Let's Encrypt certificate. One random path on 443 goes to the Xray XHTTP inbound on `127.0.0.1:10443`; every other path is the site. Its config, `/etc/nginx/conf.d/cover-site.conf`, is written by `deploy-vpn.sh`.
-- ufw admits 80 and 443 only from Cloudflare's IPv4 ranges, fetched by the deploy script into `/root/vpn/cloudflare-ips-v4.txt`. Re-run the script when Cloudflare changes its ranges.
+- nginx also answers on Cloudflare's other HTTPS ports, 2053, 2083, 2087, 2096 and 8443, with the same site and tunnel path (ADR-0020). The main link stays on 443; `/root/vpn/vless-links-alt.txt` holds one link per other port, for a user whose network cuts 443. Not run on a server yet (2026-11-12).
+- The owner's links carry `fragment=1-10,5-20,tlshello` for the Happ app and no ECH setting; ECH is turned off for the Cloudflare zone (ADR-0021, `docs/redeploy.md` step 2). What each user sets in the app is in `docs/client-setup.md`.
+- ufw admits 80, 443 and the alternative ports only from Cloudflare's IPv4 ranges, fetched by the deploy script into `/root/vpn/cloudflare-ips-v4.txt`. Re-run the script when Cloudflare changes its ranges.
 - The pages come from a Docker container in `/opt/cover-site`, published on `127.0.0.1:8080` only. The source is the repo's `site/` folder; change the page there and re-run the deploy script.
 - The certificate renews through `certbot.timer`. `scripts/verify-vpn.sh` rehearses a renewal (R-vpn-server-16.b).
 - The removed Reality inbound is in `/root/vpn/inbound-previous.json`, root-only.
@@ -163,6 +165,7 @@ Secrets stay on the VPS, readable by root only:
 | Installer output | `/root/vpn/install.log` |
 | WARP registration (private key, device id, token) | `/root/vpn/warp.json` |
 | Relay link for the fallback server (ADR-0019) | `/root/vpn/relay-link.txt`, on both servers |
+| Links for the alternative ports, one per line (ADR-0020) | `/root/vpn/vless-links-alt.txt` |
 | Original netplan files | `/root/vpn/netplan-backup/` |
 
 To show the client link: `ssh zcom-th 'sudo -n cat /root/vpn/vless-link.txt'`. Do not paste it into the repo (rule 2).

@@ -68,6 +68,8 @@ Order chosen by the owner on 2026-11-12. Step 1 is decided (ADR-0018); the other
 3. Spare domains on different registered domains, vetted with `scripts/check-name.sh` and kept unused.
 4. For Russia an entry relay inside the country; for China a host with a better route.
 
+Decided on 2026-11-12 and written, not yet run on a server (`changes/protect-the-name/`): the tunnel on Cloudflare's other HTTPS ports (ADR-0020, a second way in for flag 6 when a network cuts 443 but not the name), and ECH off, hello fragmentation in the link, split tunneling for every user and a word rule for names (ADR-0021, for flag 3 and the life of a name).
+
 Expected users: at most 20 to 30 during the test period (owner, 2026-11-12).
 
 [TODO-CLARIFY: which countries come first?]
