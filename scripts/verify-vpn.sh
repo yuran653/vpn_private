@@ -533,12 +533,14 @@ else
     fail R-vpn-server-07.b "no security-update run in the last 48 hours"
 fi
 
-# R-vpn-server-07.c: an update that needs a reboot restarts the host at 04:00.
+# R-vpn-server-07.c: an update that needs a reboot restarts the host at 01:00
+# Bangkok time; the reboot time is local, so the time zone is checked too (ADR-0022).
 if printf '%s\n' "$apt_settings" | grep -q 'Unattended-Upgrade::Automatic-Reboot "true"' \
-    && printf '%s\n' "$apt_settings" | grep -q 'Unattended-Upgrade::Automatic-Reboot-Time "04:00"'; then
-    pass R-vpn-server-07.c "automatic reboot after updates is on, at 04:00"
+    && printf '%s\n' "$apt_settings" | grep -q 'Unattended-Upgrade::Automatic-Reboot-Time "01:00"' \
+    && [ "$(timedatectl show -p Timezone --value 2>/dev/null)" = Asia/Bangkok ]; then
+    pass R-vpn-server-07.c "automatic reboot after updates is on, at 01:00 Asia/Bangkok"
 else
-    fail R-vpn-server-07.c "automatic reboot after updates is not set for 04:00"
+    fail R-vpn-server-07.c "automatic reboot after updates is not set for 01:00, or the time zone is not Asia/Bangkok"
 fi
 
 # R-vpn-server-11.a: new TCP connections use BBR congestion control.

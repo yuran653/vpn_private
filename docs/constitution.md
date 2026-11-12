@@ -12,7 +12,7 @@ Rules Personal VPS located in Thailand does not trade off. Each rule names what 
 | ID | Rule | Enforced by | Status |
 |---|---|---|---|
 | C-01 | No secrets (keys, tokens, passwords, certificates, `.env` contents) in the repository or its history. | [TODO-CLARIFY: secret scanner] | discipline-only |
-| C-02 | `main` changes only through a pull request whose checks pass. | [TODO-CLARIFY: branch protection] | discipline-only |
+| C-02 | `main` changes only through a pull request. The agent opens it, pushes it and merges it itself, without a separate review (ADR-0023). When checks exist, they must pass before the merge. | [TODO-CLARIFY: branch protection] | discipline-only |
 | C-03 | A change to observable behavior has a spec delta, and every new acceptance criterion has a test or is marked `untested` with a reason. | Review of the change folder | discipline-only |
 | C-04 | Dependencies between modules follow `docs/architecture.md`. | [TODO-CLARIFY: dependency-boundary check] | discipline-only |
 | C-05 | When an implemented approach is replaced, the reason is recorded as a decision with a "Do not" line in `docs/decisions/INDEX.md`. | Review of the change folder | discipline-only |

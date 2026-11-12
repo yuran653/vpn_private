@@ -444,7 +444,7 @@ colo=BKK   <span class="c"># R-vpn-server-12.f</span></div>
         <li><b>Flood limits</b><span>SSH: 10 open or 30 new per minute per address. Port 443 has no per‑address limit, because every client arrives from a shared Cloudflare address; Cloudflare absorbs floods first. SYN cookies on, backlog 4096.</span></li>
         <li><b>SSH</b><span>Keys only, no root, no passwords. Unauthenticated connections drop after 30 s. fail2ban watches the rest.</span></li>
         <li><b>Web</b><span>nginx with a Let's Encrypt certificate for <span class="mono">casedigestai.com</span>, <span class="mono">files.</span> and <span class="mono">status.</span>, renewed by certbot. The site runs in Docker on 127.0.0.1.</span></li>
-        <li><b>Updates</b><span>unattended‑upgrades installs security fixes and reboots at 04:00 when one needs it.</span></li>
+        <li><b>Updates</b><span>unattended‑upgrades installs security fixes and reboots at 01:00 Bangkok time when one needs it.</span></li>
         <li><b>Speed</b><span>BBR with fq pacing, 16 MB socket buffers, no slow start after idle.</span></li>
       </ul>
       <div class="nums" aria-label="Measured performance">

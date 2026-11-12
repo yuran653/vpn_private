@@ -145,7 +145,7 @@ The server is the website of `casedigestai.com`, `files.casedigestai.com` and `s
 
 ## Updates and reboots
 
-Security updates install every night without an operator. When one needs a reboot, the host reboots itself at 04:00 server time (ADR-0006, which assumes the host's time zone is Asia/Bangkok; no script sets it, see the note there); VPN connections drop for about a minute. Port 443 has no per-address limits: every client arrives from a Cloudflare address (ADR-0013).
+Security updates install every night without an operator. When one needs a reboot, the host reboots itself at 01:00 Bangkok time (ADR-0022: the deploy sets the host's time zone to Asia/Bangkok, on both servers); VPN connections drop for about a minute. Port 443 has no per-address limits: every client arrives from a Cloudflare address (ADR-0013).
 
 ## TCP tuning
 

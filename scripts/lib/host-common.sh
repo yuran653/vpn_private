@@ -28,7 +28,10 @@ readonly GRUB_CONF=/etc/default/grub.d/60-vpn-disable-ipv6.cfg
 readonly NETPLAN_BACKUP=$STATE_DIR/netplan-backup
 readonly AUTO_UPGRADES=/etc/apt/apt.conf.d/20auto-upgrades
 readonly AUTO_REBOOT=/etc/apt/apt.conf.d/52vpn-auto-reboot
-readonly AUTO_REBOOT_TIME=04:00
+# The reboot time is local time, so the deploy sets the host's time zone itself
+# and does not leave it to the provider's image (ADR-0022).
+readonly HOST_TIMEZONE=Asia/Bangkok
+readonly AUTO_REBOOT_TIME=01:00
 readonly TCP_SYSCTL_CONF=/etc/sysctl.d/60-vpn-tcp.conf
 readonly TCP_MODULES_CONF=/etc/modules-load.d/vpn-tcp.conf
 # Upper limit of one TCP connection's send and receive buffer. The kernel grows
@@ -69,6 +72,10 @@ EOF
 chmod 644 "$AUTO_UPGRADES"
 # An update that needs a reboot (kernel, libc) is not in effect until the host
 # restarts, so the host restarts itself in the quiet hours (ADR-0006).
+if [ "$(timedatectl show -p Timezone --value 2>/dev/null)" != "$HOST_TIMEZONE" ]; then
+    timedatectl set-timezone "$HOST_TIMEZONE" || die "could not set the time zone to $HOST_TIMEZONE"
+    log "time zone set to $HOST_TIMEZONE"
+fi
 cat > "$AUTO_REBOOT" <<EOF
 Unattended-Upgrade::Automatic-Reboot "true";
 Unattended-Upgrade::Automatic-Reboot-WithUsers "true";
@@ -77,7 +84,7 @@ Unattended-Upgrade::Remove-Unused-Kernel-Packages "true";
 EOF
 chmod 644 "$AUTO_REBOOT"
 systemctl enable --now unattended-upgrades >/dev/null 2>&1
-log "unattended upgrades enabled, automatic reboot at $AUTO_REBOOT_TIME"
+log "unattended upgrades enabled, automatic reboot at $AUTO_REBOOT_TIME $HOST_TIMEZONE"
 # Install what is pending now instead of waiting for the nightly timer: a fresh
 # provider image is months behind. Quick when nothing is pending.
 log "installing pending security updates (the first run can take several minutes)"
@@ -304,7 +311,7 @@ if [ -n "${reboot_needed_qdisc:-}" ]; then
     log "REBOOT NEEDED: fq pacing on the network interface starts only after a reboot"
 fi
 if [ -e /var/run/reboot-required ]; then
-    log "REBOOT NEEDED: an installed update takes effect only after a reboot (automatic at $AUTO_REBOOT_TIME otherwise)"
+    log "REBOOT NEEDED: an installed update takes effect only after a reboot (automatic at $AUTO_REBOOT_TIME $HOST_TIMEZONE otherwise)"
 fi
 return 0
 }
