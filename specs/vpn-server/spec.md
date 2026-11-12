@@ -197,3 +197,24 @@ The client link offers HTTP/1.1 only, and the tunnel carries traffic whether the
   Test: `scripts/verify-vpn.sh` (R-vpn-server-19.b); the exit address is checked to be an IPv4 address that is not the server's own, and R-vpn-server-12.a checks WARP for the main client
 - **R-vpn-server-19.c** [verified] WHEN a client that offers only HTTP/2 opens a connection through the tunnel THEN traffic passes.
   Test: `scripts/verify-vpn.sh` (R-vpn-server-19.c)
+
+### R-vpn-server-20: Blocked names are not used
+
+Names that a censor is known to block are recorded in `docs/blocked-names.txt`, and neither the site nor the client link uses a listed name or a name under a listed domain.
+
+- **R-vpn-server-20.a** [drift: `casedigestai.com` is on the list (blocked on Russian mobile networks, 2026-11-12) and the deployed site and link still use it; the check fails until the owner replaces the domain] WHEN the names the site and the client link use are compared with the blocked-names list THEN none is on it, exactly or as a name under a listed domain.
+  Test: `scripts/verify-external.sh` (R-vpn-server-20.a)
+
+### R-vpn-server-21: A name is tried from a mobile network before it carries the tunnel
+
+A name check, run on a phone on mobile data, shows whether a name can carry the tunnel from the network it runs on, and a name goes into the client link only after it passes.
+
+- **R-vpn-server-21.a** [verified] WHEN the name check runs against a name that answers GET over HTTP/1.1 and HTTP/2 and takes uploads of 500, 5000 and 30000 bytes THEN it exits 0.
+  Test: `scripts/verify-external.sh` (R-vpn-server-21.a), run from the owner's workstation against the live name
+- **R-vpn-server-21.b** [verified] WHEN the name check runs against a name that gets no answer THEN it exits 1 and names each failing check.
+  Test: `scripts/verify-external.sh` (R-vpn-server-21.b), which pins the name to an address that never answers
+- **R-vpn-server-21.c** [untested: no automated test; it needs a network that cuts uploads to the control name] WHEN the control name cannot take a 30 KB upload from the network the check runs on THEN the check exits 2 and judges nothing.
+  Test: none
+- **R-vpn-server-21.d** [untested: a process the owner follows, which no script here can observe; the check has to run on a phone on each target network] WHEN a name is to be put in the client link THEN the name check has passed for it from a mobile network in each country the owner serves.
+  Test: none
+

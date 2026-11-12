@@ -154,6 +154,33 @@ for name in "${SITE_NAMES[@]}"; do
     esac
 done
 
+# R-vpn-server-20.a: no name the site or the link uses is on the blocked list
+# (docs/blocked-names.txt), neither exactly nor as a name under a listed domain.
+blocked_file=$(dirname "$0")/../docs/blocked-names.txt
+hits=$(python3 -I - "$blocked_file" "${SITE_NAMES[@]}" <<'PY'
+import sys
+blocked = [l.split()[0].lower() for l in open(sys.argv[1]) if l.strip() and not l.startswith("#")]
+for name in sys.argv[2:]:
+    if any(name.lower() == b or name.lower().endswith("." + b) for b in blocked):
+        print(name)
+PY
+)
+if [ -z "$hits" ]; then
+    pass R-vpn-server-20.a "no site name is on the blocked list"
+else
+    fail R-vpn-server-20.a "on the blocked list: $(printf '%s' "$hits" | tr '\n' ' ')"
+fi
+
+# R-vpn-server-21.a and .b: the name check passes for a name that answers, and
+# fails, with exit code 1, for a name that gets no answer.
+check_script=$(dirname "$0")/check-name.sh
+bash "$check_script" "$COVER_NAME" >/dev/null 2>&1; rc=$?
+[ "$rc" -eq 0 ] && pass R-vpn-server-21.a "check-name.sh passes $COVER_NAME from here" \
+    || fail R-vpn-server-21.a "check-name.sh exited $rc for $COVER_NAME"
+bash "$check_script" "$COVER_NAME" 192.0.2.1 >/dev/null 2>&1; rc=$?
+[ "$rc" -eq 1 ] && pass R-vpn-server-21.b "check-name.sh fails a name that gets no answer" \
+    || fail R-vpn-server-21.b "check-name.sh exited $rc for an unreachable name, expected 1"
+
 echo
 if [ "$fails" -eq 0 ]; then
     echo "all checks passed"

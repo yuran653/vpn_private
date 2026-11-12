@@ -1,0 +1,4 @@
+# Names that are blocked for the VPN. One per line: <name> <date> <where seen and why>.
+# A name here, or any name under it, must not appear in the client link or the site
+# (R-vpn-server-20). Names are public; nothing secret goes in this file.
+casedigestai.com 2026-11-12 Beeline Moscow mobile data: uploads over about 2 KB to every name under it hang, HTTP/2 hangs; the owner found the page unreachable over https on mobile (docs/censor-red-flags.md)

@@ -21,6 +21,7 @@ Format: `- Do not <approach>: <one-line reason>. (ADR-NNNN)`
 - Do not limit connections per source address on port 443: every client arrives from a shared Cloudflare address. (ADR-0013)
 - Do not set `xPaddingBytes` on the server to a range the client link does not share: the server rejects requests whose padding is outside its range. (ADR-0014)
 - Do not enable `http2` on nginx's listener, put `h2` in the client link's `alpn`, or set a browser `fp` (`chrome`, `firefox`, `safari`, `ios`, `edge`) in it: Russian mobile networks hang HTTP/2 to our names, and an `http2` listener answers an HTTP/1.1 tunnel client with raw HTTP/2 frames, while a browser `fp` makes the client offer `h2` anyway. (ADR-0015)
+- Do not put a name in the client link before `scripts/check-name.sh` passes for it from a mobile network in each target country, and do not reuse a name or a domain listed in `docs/blocked-names.txt`: a flagged domain made every uploaded request to its names hang on a Russian mobile network. (ADR-0017)
 
 ## Log
 
@@ -43,3 +44,4 @@ One row per decision record in this folder. Files are named `ADR-NNNN-<slug>.md`
 | [ADR-0013](ADR-0013-clients-only-through-cloudflare.md) | Clients reach the server only through Cloudflare | accepted | 2026-11-12 |
 | [ADR-0014](ADR-0014-browser-like-connections-files-name.md) | Browser-like connection rotation and a cover name for heavy traffic | accepted | 2026-11-12 |
 | [ADR-0015](ADR-0015-tunnel-over-http1.md) | Tunnel over HTTP/1.1, passed by proxy_pass | accepted | 2026-11-12 |
+| [ADR-0017](ADR-0017-vet-names-before-use.md) | Names are tried from a mobile network before use, and blocked names are listed | accepted | 2026-11-12 |
