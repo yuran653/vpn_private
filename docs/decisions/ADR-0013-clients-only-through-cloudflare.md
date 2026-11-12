@@ -1,6 +1,6 @@
 # ADR-0013: Clients reach the server only through Cloudflare
 
-- Status: accepted
+- Status: accepted; the "CDN only" choice and the first "Do not" line superseded by ADR-0018
 - Date: 2026-11-12
 - Supersedes: ADR-0012 in part (the Reality inbound and the direct client link; the cover site itself stays), ADR-0005 in part (the per-address limits on port 443; the SSH limits stay)
 - Change: `changes/archive/2026-11-12-route-clients-through-cloudflare/`

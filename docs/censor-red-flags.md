@@ -59,9 +59,9 @@ Lessons:
 
 Flags 1 and 2 are fixed (ADR-0012, ADR-0013). Fixing flags 5 and 6 would cover most of the remaining risk. Options mentioned so far, none decided:
 - SSH reachable only from known addresses, or only through a hidden path.
-- A second transport and spare IPs, so one block doesn't cut everyone off. Drafted as ADR-0018 (proposed, not accepted).
+- A second transport and spare IPs, so one block doesn't cut everyone off. Decided as ADR-0018 (accepted 2026-11-12, not built yet).
 
-Order proposed on 2026-11-12, each step still needing its own decision:
+Order chosen by the owner on 2026-11-12. Step 1 is decided (ADR-0018); the others still need their own decision:
 
 1. A second transport: direct Reality on a separate VPS and address, with the Cloudflare path kept as the first one (ADR-0018).
 2. SSH closed to all but known addresses before that server goes up (flag 5).

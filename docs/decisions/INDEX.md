@@ -14,14 +14,16 @@ Format: `- Do not <approach>: <one-line reason>. (ADR-NNNN)`
 - Do not add a `freedom` outbound to the Xray template or route client traffic out from the server's own address: Google places that address in Myanmar, and a second way out leaks when WARP is down. (ADR-0008)
 - Do not serve a subscription to the client app through the tunnel at a reserved address, or otherwise expect Happ to fetch one through its own tunnel: the app fetches subscriptions outside it and the request times out. A subscription needs a public address, which ADR-0002 forbids. (ADR-0011)
 - Do not point the WARP tunnel at `162.159.192.1` (`engage.cloudflareclient.com`) or at `162.159.193.1`: from this host the first is answered in Singapore, 27 ms away, and the second passes no traffic. (ADR-0009)
-- Do not use a third-party site as the Reality cover site: its name does not match the VPS address, and relaying probes to it adds a round trip that gives the relay away. (ADR-0012)
+- Do not use as the Reality cover site a third-party site hosted outside the provider network of the VPS, or point the owner's own domain straight at a VPS address: the first does not match the address, the second ties a name to a hosting address. (ADR-0012, reworded by ADR-0018)
 - Do not publish a Docker container port on a public address: Docker's firewall rules bypass ufw. Publish on `127.0.0.1` and put the host web server in front. (ADR-0012)
-- Do not give clients a link to the server's own address, or any way in that does not pass through Cloudflare: the ISP then sees a hosting provider's address (flag 2). (ADR-0013)
+- Do not give clients a link to the address of the server behind Cloudflare, or open a second way in on that server: its address must stay unused and unanswering. A way in outside Cloudflare runs on a separate server and is handed out only as a fallback. (ADR-0013, reworded by ADR-0018)
 - Do not admit 80/tcp or 443/tcp from outside Cloudflare's published ranges: the server's address must not answer probes directly. (ADR-0013)
 - Do not limit connections per source address on port 443: every client arrives from a shared Cloudflare address. (ADR-0013)
 - Do not set `xPaddingBytes` on the server to a range the client link does not share: the server rejects requests whose padding is outside its range. (ADR-0014)
 - Do not enable `http2` on nginx's listener, put `h2` in the client link's `alpn`, or set a browser `fp` (`chrome`, `firefox`, `safari`, `ios`, `edge`) in it: Russian mobile networks hang HTTP/2 to our names, and an `http2` listener answers an HTTP/1.1 tunnel client with raw HTTP/2 frames, while a browser `fp` makes the client offer `h2` anyway. (ADR-0015)
 - Do not put a name in the client link before `scripts/check-name.sh` passes for it from a mobile network in each target country, and do not reuse a name or a domain listed in `docs/blocked-names.txt`: a flagged domain made every uploaded request to its names hang on a Russian mobile network. (ADR-0017)
+- Do not hand out the direct Reality link as the default link: the user's ISP then sees a hosting provider's address (flag 2). It is the fallback for networks where the Cloudflare link fails. (ADR-0018)
+- Do not let the second server take clients while its SSH port is open to everyone: its address is visible to every client's ISP and to probes. (ADR-0018)
 
 ## Log
 
@@ -40,9 +42,9 @@ One row per decision record in this folder. Files are named `ADR-NNNN-<slug>.md`
 | [ADR-0009](ADR-0009-warp-endpoint-in-bangkok.md) | WARP endpoint answered in Bangkok | accepted | 2026-11-10 |
 | [ADR-0010](ADR-0010-subscription-through-tunnel.md) | Subscription served through the tunnel | superseded by ADR-0011 | 2026-11-11 |
 | [ADR-0011](ADR-0011-no-subscription-name-in-the-link.md) | No subscription; the profile name travels in the client link | accepted | 2026-11-11 |
-| [ADR-0012](ADR-0012-own-domain-cover-site.md) | Cover site on the owner's own domain, served from the VPS | accepted; the Reality inbound superseded by ADR-0013 | 2026-11-12 |
-| [ADR-0013](ADR-0013-clients-only-through-cloudflare.md) | Clients reach the server only through Cloudflare | accepted | 2026-11-12 |
+| [ADR-0012](ADR-0012-own-domain-cover-site.md) | Cover site on the owner's own domain, served from the VPS | accepted; the Reality inbound superseded by ADR-0013, the cover-site "Do not" line reworded by ADR-0018 | 2026-11-12 |
+| [ADR-0013](ADR-0013-clients-only-through-cloudflare.md) | Clients reach the server only through Cloudflare | accepted; "CDN only" superseded by ADR-0018 | 2026-11-12 |
 | [ADR-0014](ADR-0014-browser-like-connections-files-name.md) | Browser-like connection rotation and a cover name for heavy traffic | accepted | 2026-11-12 |
 | [ADR-0015](ADR-0015-tunnel-over-http1.md) | Tunnel over HTTP/1.1, passed by proxy_pass | accepted | 2026-11-12 |
 | [ADR-0017](ADR-0017-vet-names-before-use.md) | Names are tried from a mobile network before use, and blocked names are listed | accepted | 2026-11-12 |
-| [ADR-0018](ADR-0018-second-transport-outside-cloudflare.md) | A second transport that does not pass through Cloudflare | proposed; not binding until accepted | 2026-11-12 |
+| [ADR-0018](ADR-0018-second-transport-outside-cloudflare.md) | A second transport that does not pass through Cloudflare | accepted | 2026-11-12 |
