@@ -4,7 +4,8 @@
 # Installs the 3x-ui panel (pinned release), binds it to loopback, and configures
 # Xray through the panel API:
 #   1. unattended security upgrades on, pending ones installed now, and an
-#      automatic reboot at 04:00 server time when an update needs one (ADR-0006)
+#      automatic reboot at 01:00 Asia/Bangkok when an update needs one; the
+#      host's time zone is set to Asia/Bangkok (ADR-0006, ADR-0022)
 #   2. IPv6 disabled on the host (kernel parameter; needs one reboot after the first run)
 #   3. TCP sending tuned for the long-distance path to the clients: BBR
 #      congestion control, fq pacing, larger buffers (ADR-0007)

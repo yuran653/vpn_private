@@ -1,10 +1,10 @@
 # ADR-0006: Automatic reboot after updates that need one
 
-- Status: accepted
+- Status: accepted; the reboot time and the time zone superseded by ADR-0022
 - Date: 2026-11-10
 - Supersedes: none
 - Change: `changes/archive/2026-11-10-harden-against-attacks/`
-- Note (2026-11-12): no script sets the host's time zone, so "server time" is Asia/Bangkok only if the provider's image is. [TODO-CLARIFY: set the time zone in the deploy, or state the reboot time in UTC?]
+- Note (2026-11-12): nothing set the host's time zone, so "server time" was Asia/Bangkok only if the provider's image was. ADR-0022 sets the zone and moves the reboot to 01:00.
 
 ## Context
 

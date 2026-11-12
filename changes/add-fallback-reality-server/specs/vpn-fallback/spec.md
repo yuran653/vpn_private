@@ -59,7 +59,7 @@ A check, run on a phone on mobile data, shows whether an address can carry the f
 
 The second server updates itself, survives a re-run and a reboot, and its secrets stay on it.
 
-- **R-vpn-fallback-07.a** WHEN the host's update settings are inspected THEN unattended upgrades and the automatic reboot at 04:00 server time are on.
+- **R-vpn-fallback-07.a** WHEN the host's update settings are inspected THEN unattended upgrades are on, the automatic reboot is set for 01:00, and the host's time zone is Asia/Bangkok.
 - **R-vpn-fallback-07.b** WHEN the deploy script runs a second time on the same host THEN it exits with code 0 and the fallback link is unchanged.
 - **R-vpn-fallback-07.c** WHEN the host reboots THEN every other criterion of this capability still holds.
 - **R-vpn-fallback-07.d** WHEN the deploy script runs THEN its output contains no credential, key or link, and the files holding them are readable by root only.

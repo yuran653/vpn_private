@@ -55,8 +55,8 @@ readonly INBOUND_REMARK='กรุงเทพฯ fallback'
 readonly CLIENT_EMAIL=owner
 readonly CLIENT_FLOW=xtls-rprx-vision
 # A Reality link borrows a real site's name, so it sends a browser's hello.
-# ADR-0015's rule against browser fingerprints is about the HTTP/1.1 link
-# through Cloudflare. [TODO-CLARIFY: confirm with the owner; see the proposal.]
+# ADR-0015's rule against browser fingerprints covers links that go through
+# Cloudflare, not this one (reworded 2026-11-12).
 readonly LINK_FP=chrome
 readonly COVER_ARG=${1:-}
 

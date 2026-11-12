@@ -255,10 +255,11 @@ apt_settings=$(apt-config dump)
 if grep -q 'APT::Periodic::Unattended-Upgrade "1"' <<<"$apt_settings" \
     && systemctl is-enabled --quiet unattended-upgrades \
     && grep -q 'Unattended-Upgrade::Automatic-Reboot "true"' <<<"$apt_settings" \
-    && grep -q 'Unattended-Upgrade::Automatic-Reboot-Time "04:00"' <<<"$apt_settings"; then
-    pass R-vpn-fallback-07.a "unattended upgrades are on, with an automatic reboot at 04:00"
+    && grep -q 'Unattended-Upgrade::Automatic-Reboot-Time "01:00"' <<<"$apt_settings" \
+    && [ "$(timedatectl show -p Timezone --value 2>/dev/null)" = Asia/Bangkok ]; then
+    pass R-vpn-fallback-07.a "unattended upgrades are on, with an automatic reboot at 01:00 Asia/Bangkok"
 else
-    fail R-vpn-fallback-07.a "unattended upgrades or the automatic reboot at 04:00 are not set"
+    fail R-vpn-fallback-07.a "unattended upgrades or the automatic reboot at 01:00 Asia/Bangkok are not set"
 fi
 
 # R-vpn-fallback-07.c (boot half): IPv6 stays off across restarts and the panel
