@@ -28,6 +28,8 @@ readonly COVER_NAME=files.casedigestai.com
 readonly SITE_NAMES=("$COVER_DOMAIN" "$COVER_NAME" status.casedigestai.com)
 readonly COVER_PAGE_TEXT='CaseDigest AI'
 readonly CF_IPS_URL=https://www.cloudflare.com/ips-v4
+# The other HTTPS ports Cloudflare proxies (ADR-0020).
+readonly ALT_PORTS=(2053 2083 2087 2096 8443)
 
 fails=0
 pass() { printf 'PASS  %-18s %s\n' "$1" "$2"; }
@@ -83,9 +85,10 @@ done
 
 # R-vpn-server-05.b: the panel port, the usual panel and subscription ports, and
 # the loopback ports of the tunnel inbound (10443), the web server's staging
-# port (8443) and the site container (8080) are closed from outside.
+# port (18443) and the site container (8080) are closed from outside. 2053 to
+# 8443 are the alternative tunnel ports: open to Cloudflare, closed to this host.
 closed=yes
-for port in "$panel_port" 2053 2083 2087 2096 8080 8443 10443 54321; do
+for port in "$panel_port" 2053 2083 2087 2096 8080 8443 10443 18443 54321; do
     if answers "$port"; then
         closed=no
         fail R-vpn-server-05.b "a panel-related or loopback-only port answers from outside (not naming the panel port)"
@@ -186,6 +189,75 @@ bash "$check_script" "$COVER_NAME" >/dev/null 2>&1; rc=$?
 bash "$check_script" "$COVER_NAME" 192.0.2.1 >/dev/null 2>&1; rc=$?
 [ "$rc" -eq 1 ] && pass R-vpn-server-21.b "check-name.sh fails a name that gets no answer" \
     || fail R-vpn-server-21.b "check-name.sh exited $rc for an unreachable name, expected 1"
+
+# R-vpn-server-23.a (outside half): through Cloudflare, the site answers on
+# every alternative port (ADR-0020).
+missing=""
+for p in "${ALT_PORTS[@]}"; do
+    body=$(curl -s --max-time 20 "https://$COVER_NAME:$p/")
+    printf '%s' "$body" | grep -qF "$COVER_PAGE_TEXT" || missing="$missing $p"
+done
+[ -z "$missing" ] \
+    && pass R-vpn-server-23.a "https://$COVER_NAME answers on every alternative port: ${ALT_PORTS[*]}" \
+    || fail R-vpn-server-23.a "https://$COVER_NAME does not answer on:$missing"
+
+# R-vpn-server-23.c: the server's own address does not answer on an
+# alternative port to a host outside Cloudflare's ranges.
+open_ports=""
+for p in "${ALT_PORTS[@]}"; do answers "$p" && open_ports="$open_ports $p"; done
+[ -z "$open_ports" ] \
+    && pass R-vpn-server-23.c "the server's own address gives no answer on the alternative ports" \
+    || fail R-vpn-server-23.c "the server's own address answers on:$open_ports"
+
+# R-vpn-server-24.b: the names' HTTPS records in DNS offer no ECH configuration
+# (ADR-0021). dig prints the record as text or, when it does not know the
+# type, as raw bytes; both forms are read. No record at all also passes.
+with_ech=""
+for name in "${SITE_NAMES[@]}"; do
+    record=$(dig +short TYPE65 "$name" @1.1.1.1 2>/dev/null)
+    if printf '%s\n' "$record" | python3 -I -c 'import sys
+found = False
+for line in sys.stdin:
+    line = line.strip()
+    if not line:
+        continue
+    if not line.startswith("\\#"):
+        found = found or "ech=" in line
+        continue
+    data = bytes.fromhex("".join(line.split()[2:]))
+    i = 2                                   # skip the priority
+    while i < len(data) and data[i] != 0:   # skip the target name
+        i += 1 + data[i]
+    i += 1
+    while i + 4 <= len(data):               # the parameters: key, length, value
+        key, size = int.from_bytes(data[i:i + 2], "big"), int.from_bytes(data[i + 2:i + 4], "big")
+        found = found or key == 5           # key 5 is ech
+        i += 4 + size
+sys.exit(0 if found else 1)'; then
+        with_ech="$with_ech $name"
+    fi
+done
+[ -z "$with_ech" ] \
+    && pass R-vpn-server-24.b "no site name offers an ECH configuration in DNS" \
+    || fail R-vpn-server-24.b "ECH is offered in DNS for:$with_ech (turn ECH off for the zone, docs/redeploy.md step 2)"
+
+# R-vpn-server-25.a: no site name contains a word from the avoided-words list
+# (docs/avoided-name-words.txt, ADR-0021).
+words_file=$(dirname "$0")/../docs/avoided-name-words.txt
+word_hits=$(python3 -I - "$words_file" "${SITE_NAMES[@]}" <<'PY'
+import sys
+words = [l.strip().lower() for l in open(sys.argv[1]) if l.strip() and not l.startswith("#")]
+for name in sys.argv[2:]:
+    for w in words:
+        if w in name.lower():
+            print(name + ":" + w)
+PY
+)
+if [ -s "$words_file" ] && [ -z "$word_hits" ]; then
+    pass R-vpn-server-25.a "no site name contains an avoided word"
+else
+    fail R-vpn-server-25.a "avoided word in a site name, or the list is missing: $(printf '%s' "$word_hits" | tr '\n' ' ')"
+fi
 
 # The fallback server (ADR-0018, ADR-0019), when its SSH alias is given. Its
 # address and cover name are read from the server and are not printed.

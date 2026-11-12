@@ -24,6 +24,11 @@
 #      names files.casedigestai.com, not the server's address, and carries
 #      the connection rotation settings (ADR-0014)
 #
+#  11. the same site and tunnel on the other HTTPS ports Cloudflare proxies
+#      (2053, 2083, 2087, 2096, 8443), from Cloudflare's ranges only, with one
+#      link per port in /root/vpn/vless-links-alt.txt (ADR-0020)
+#  12. the owner's links ask the client app to fragment the TLS hello, and
+#      carry no ECH setting (ADR-0021)
 #  10. a second client, `relay`, for the fallback server (ADR-0019); its link is
 #      written to /root/vpn/relay-link.txt (mode 600)
 #
@@ -57,6 +62,10 @@ readonly LIB=$(cd "$(dirname "$0")" && pwd)/lib/host-common.sh
 . "$LIB"
 
 readonly VPN_PORT=443
+# The other HTTPS ports Cloudflare proxies (ADR-0020). nginx answers on each as
+# on VPN_PORT, admitted from Cloudflare's ranges only. A link per port is kept
+# for networks where 443 to the name is cut.
+readonly ALT_PORTS=(2053 2083 2087 2096 8443)
 # Cover site (ADR-0012) behind Cloudflare (ADR-0013). Clients connect to
 # COVER_NAME, which Cloudflare proxies to nginx on VPN_PORT (ADR-0014: a
 # case-file sync name, where heavy transfers are normal). SITE_NAMES are all
@@ -74,7 +83,8 @@ readonly SITE_NAMES=("$COVER_DOMAIN" "$COVER_NAME" status.casedigestai.com)
 # connection takes no new sessions after 2-5 minutes or 32-64 sessions.
 readonly XHTTP_PADDING=100-1000
 readonly XHTTP_XMUX='{"maxConcurrency":"16-32","cMaxReuseTimes":"32-64","hMaxRequestTimes":"600-900","hMaxReusableSecs":"120-300"}'
-readonly STAGING_TLS_PORT=8443
+# 18443, not 8443: 8443 is one of the alternative ports now (ADR-0020).
+readonly STAGING_TLS_PORT=18443
 readonly COVER_SITE_PORT=8080
 readonly XHTTP_PORT=10443
 readonly COVER_DIR=/opt/cover-site
@@ -111,6 +121,12 @@ readonly LIMITS_MARKER='vpn-server port limits'
 # its own (ADR-0019). Its link is kept apart from the owner's.
 readonly RELAY_EMAIL=relay
 readonly RELAY_LINK_FILE=$STATE_DIR/relay-link.txt
+# One link per alternative port (ADR-0020), one per line.
+readonly ALT_LINKS_FILE=$STATE_DIR/vless-links-alt.txt
+# TLS hello fragmentation (ADR-0021): a parameter the Happ app reads from the
+# link, as length,interval,what-to-split. It applies only while the app's own
+# global fragmentation setting is off. Xray itself ignores it in a link.
+readonly LINK_FRAGMENT=1-10,5-20,tlshello
 
 host_preflight
 [ -s "$SITE_SRC/docker-compose.yml" ] && [ -s "$SITE_SRC/html/index.html" ] \
@@ -200,6 +216,10 @@ log "xray template applied"
 case "$XUI_PANEL_PORT" in
     "$STAGING_TLS_PORT"|"$COVER_SITE_PORT"|"$XHTTP_PORT") die "the panel port collides with a cover site or tunnel port" ;;
 esac
+for p in "${ALT_PORTS[@]}"; do
+    [ "$XUI_PANEL_PORT" != "$p" ] \
+        || die "the panel port is one of the alternative tunnel ports (ADR-0020); move the panel to another port and run again"
+done
 public_ip=$(ip -4 route get 1.1.1.1 | awk '{for (i = 1; i < NF; i++) if ($i == "src") print $(i + 1)}')
 printf '%s' "$public_ip" | grep -Eq '^([0-9]{1,3}\.){3}[0-9]{1,3}$' || die "could not read the public IPv4 address"
 # nginx's packaged default site listens on IPv6, which this host does not have,
@@ -299,16 +319,17 @@ log "all site names resolve to Cloudflare only"
 # no longer lists are deleted. The rules that admit everyone are deleted at the
 # cut-over, in step 7.
 for range in "${cf_ranges[@]}"; do
-    for port in 80 "$VPN_PORT"; do
+    for port in 80 "$VPN_PORT" "${ALT_PORTS[@]}"; do
         ufw allow proto tcp from "$range" to any port "$port" comment "$CF_RULE_COMMENT" >/dev/null
     done
 done
 ufw status | awk -v c="# $CF_RULE_COMMENT" 'index($0, c) {print $1 " " $3}' | sort -u > "$work/cf-rules"
 while read -r portspec range; do
-    printf '%s\n' "${cf_ranges[@]}" | grep -qxF "$range" && continue
+    if printf '%s\n' "${cf_ranges[@]}" | grep -qxF "$range" \
+        && printf '%s\n' 80 "$VPN_PORT" "${ALT_PORTS[@]}" | grep -qxF "${portspec%/tcp}"; then continue; fi
     ufw delete allow proto tcp from "$range" to any port "${portspec%/tcp}" >/dev/null || true
 done < "$work/cf-rules"
-log "80/tcp and ${VPN_PORT}/tcp admitted from Cloudflare's ${#cf_ranges[@]} ranges"
+log "80/tcp, ${VPN_PORT}/tcp and the alternative ports ${ALT_PORTS[*]} admitted from Cloudflare's ${#cf_ranges[@]} ranges"
 
 # The tunnel path: made once, kept in the inbound once that exists. A copy is
 # kept root-only so the web server config can be written before the inbound.
@@ -336,6 +357,13 @@ sed -i -E 's|^([[:space:]]*)access_log[[:space:]].*;|\1access_log off;|' /etc/ng
 install -d -m 755 "$ACME_ROOT"
 site_names_re=$(printf '%s|' "${SITE_NAMES[@]}"); site_names_re=${site_names_re%|}; site_names_re=${site_names_re//./\\.}
 write_nginx_conf() { # write_nginx_conf [<tls listen address>]
+    # The alternative ports (ADR-0020) are served once nginx holds VPN_PORT, not
+    # while its TLS side still waits on the staging port.
+    local alt_listen="" p
+    if [ "${1:-}" = "$VPN_PORT" ]; then
+        for p in "${ALT_PORTS[@]}"; do alt_listen="$alt_listen
+    listen $p ssl default_server;"; done
+    fi
     cat > "$work/cover-site.conf" <<EOF
 # Written by deploy-vpn.sh (ADR-0012, ADR-0013). Edits are overwritten on the next run.
 server {
@@ -354,7 +382,7 @@ EOF
 server {
     # No http2 here (ADR-0015): only Cloudflare connects, and a listener with http2 answers
     # an HTTP/1.1 tunnel client with raw HTTP/2 frames.
-    listen $1 ssl default_server;
+    listen $1 ssl default_server;$alt_listen
     server_name ${SITE_NAMES[*]};
     server_tokens off;
     access_log off;
@@ -552,7 +580,11 @@ for name in "${SITE_NAMES[@]}"; do
     serves_page --http2 --resolve "$name:$VPN_PORT:127.0.0.1" "https://$name:$VPN_PORT/" \
         || die "nginx does not answer for $name on ${VPN_PORT}"
 done
-log "nginx holds ${VPN_PORT}/tcp: site and tunnel path"
+for p in "${ALT_PORTS[@]}"; do
+    serves_page --resolve "$COVER_NAME:$p:127.0.0.1" "https://$COVER_NAME:$p/" \
+        || die "nginx does not answer for $COVER_NAME on $p"
+done
+log "nginx holds ${VPN_PORT}/tcp and the alternative ports ${ALT_PORTS[*]}: site and tunnel path"
 
 # 8. Firewall: only Cloudflare reaches 80 and 443 (added in step 6). The rules
 #    that admitted everyone, and the per-address limits on 443 (ADR-0005,
@@ -586,28 +618,37 @@ log "80/tcp and ${VPN_PORT}/tcp closed to everyone but Cloudflare"
 #    address: the client reaches Cloudflare, which reaches this server.
 #    Written to a root-only file.
 #    The relay link (ADR-0019) is the same link for the client `relay`.
-write_link() { # write_link <client email> <profile name> <file>
+write_link() { # write_link <client email> <profile name> <file> [port] [fragment]
 api_ok "read inbound" "panel/api/inbounds/get/$xhttp_id" | jq -r \
-    --arg host "$COVER_NAME" --argjson port "$VPN_PORT" --arg email "$1" --arg name "$2" \
+    --arg host "$COVER_NAME" --argjson port "${4:-$VPN_PORT}" --arg email "$1" --arg name "$2" --arg frag "${5:-}" \
     --arg padding "$XHTTP_PADDING" --argjson xmux "$XHTTP_XMUX" '
     .obj as $in
     | ($in.settings | if type == "string" then fromjson else . end) as $s
     | ($in.streamSettings | if type == "string" then fromjson else . end) as $st
     | ($s.clients[] | select(.email == $email)) as $c
-    | "vless://\($c.id)@\($host):\($port)?encryption=none&security=tls&sni=\($host)&fp=android&alpn=http%2F1.1&type=xhttp&host=\($host)&path=\($st.xhttpSettings.path | @uri)&mode=auto&extra=\({xPaddingBytes: $padding, xmux: $xmux} | tojson | @uri)#\($name | @uri)"' \
+    | "vless://\($c.id)@\($host):\($port)?encryption=none&security=tls&sni=\($host)&fp=android&alpn=http%2F1.1&type=xhttp&host=\($host)&path=\($st.xhttpSettings.path | @uri)&mode=auto\(if $frag == "" then "" else "&fragment=" + $frag end)&extra=\({xPaddingBytes: $padding, xmux: $xmux} | tojson | @uri)#\($name | @uri)"' \
     > "$3"
 chmod 600 "$3"
 grep -q '^vless://' "$3" || die "the link for the client '$1' was not written"
 }
-write_link "$CLIENT_EMAIL" "$INBOUND_REMARK" "$LINK_FILE"
+write_link "$CLIENT_EMAIL" "$INBOUND_REMARK" "$LINK_FILE" "$VPN_PORT" "$LINK_FRAGMENT"
 log "client link written to $LINK_FILE"
 write_link "$RELAY_EMAIL" "$RELAY_EMAIL" "$RELAY_LINK_FILE"
 log "relay link written to $RELAY_LINK_FILE"
+# The same link on each alternative port (ADR-0020), for a network that cuts
+# 443 to the name. The profile name carries the port, so the app tells them apart.
+: > "$ALT_LINKS_FILE"
+chmod 600 "$ALT_LINKS_FILE"
+for p in "${ALT_PORTS[@]}"; do
+    write_link "$CLIENT_EMAIL" "$INBOUND_REMARK $p" "$work/alt-link" "$p" "$LINK_FRAGMENT"
+    cat "$work/alt-link" >> "$ALT_LINKS_FILE"
+done
+log "links for the alternative ports written to $ALT_LINKS_FILE"
 rm -f "$STATE_DIR/subscription-url.txt"
 
 log "final state:"
 systemctl is-active x-ui
 ufw status | grep -v "# $CF_RULE_COMMENT" | sed -n '1,12p'
-log "plus $(ufw status | grep -c "# $CF_RULE_COMMENT") rules admitting Cloudflare's ranges to 80 and ${VPN_PORT}"
+log "plus $(ufw status | grep -c "# $CF_RULE_COMMENT") rules admitting Cloudflare's ranges to 80, ${VPN_PORT} and the alternative ports"
 host_reboot_notes
 log "done"

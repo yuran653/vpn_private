@@ -1,0 +1,36 @@
+# Words a site name must not contain (R-vpn-server-25, ADR-0021). One per line,
+# lower case. A name is refused when a word appears anywhere inside it, so do
+# not list short words that occur inside ordinary ones ("tor" is in "storage").
+# Censors match names by keyword: the first group says what the service is, the
+# second draws political attention. Add words as they become known.
+#
+# What the service is
+vpn
+proxy
+tunnel
+vless
+vmess
+xray
+v2ray
+trojan
+shadowsocks
+wireguard
+warp
+bypass
+unblock
+anticensor
+firewall
+gfw
+#
+# Politically sensitive
+freedom
+protest
+dissident
+opposition
+tiananmen
+falun
+tibet
+uyghur
+xinjiang
+navalny
+khamenei
