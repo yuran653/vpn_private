@@ -26,7 +26,7 @@ Two questions decide where to start:
 ## Cloudflare to the server
 
 8. **Set an A record for every site name** to the new IP, **proxied (orange cloud) from the first second**. On a kept domain, change the existing records and leave none on the old IP. A record left on "DNS only" even briefly puts the IP into DNS history and ties the name to a hosting address (flag 1 and the 2026-11-12 incident in `docs/censor-red-flags.md`). Wait until `dig +short A <name> @1.1.1.1` returns Cloudflare addresses for every name; the deploy script stops if one does not.
-9. **Deploy**: copy the scripts and `site/`, run `deploy-vpn.sh` detached and wait for `[deploy] done`. On a fresh host the folder for the run log does not exist yet; the command in `docs/vps-access.md` creates it. If the script prints `REBOOT NEEDED`, reboot once. A fresh host always needs that reboot, because IPv6 is turned off in the kernel. The script is safe to re-run: after a failure, fix the cause and run it again.
+9. **Deploy**: copy the scripts, `scripts/lib/` and `site/`, run `deploy-vpn.sh` detached and wait for `[deploy] done`. On a fresh host the folder for the run log does not exist yet; the command in `docs/vps-access.md` creates it. If the script prints `REBOOT NEEDED`, reboot once. A fresh host always needs that reboot, because IPv6 is turned off in the kernel. The script is safe to re-run: after a failure, fix the cause and run it again.
 10. **Verify**, after the reboot: `verify-vpn.sh` on the VPS and `verify-external.sh` from the workstation. The reboot empties `/tmp`, so copy `verify-vpn.sh` again. Every check must pass. If R-vpn-server-12.f fails, the WARP endpoint `188.114.97.1` is not answered in Bangkok from the new host: report it, because ADR-0009 was decided on an earlier host. The exit is still valid while R-vpn-server-12.a to 12.d pass.
 
 ## Before any device gets the link
@@ -38,6 +38,10 @@ Two questions decide where to start:
 
 13. **Remove what is left of the old setup**, once every device is on the new link: destroy the old VPS if it still exists (it holds the old keys in `/root/vpn/`), and delete the DNS records of a domain that was replaced.
 14. **Record**: update `docs/vps-access.md` (the Target table: IP geo results, zone), `docs/censor-red-flags.md` (incident and flag status for the new host) and the spec, through a change with a PR. Add a line to the log below.
+
+## The fallback server
+
+The second server (ADR-0018, ADR-0019) is deployed after step 10, because it needs the first server's relay link. Its order is in `docs/vps-access.md`, "Fallback server": try the candidate address from a phone, baseline with `--ssh-from`, move the relay link, deploy, verify. Its link goes out in step 12 as a second profile, for networks where the first one fails. After the first server's domain is replaced, move the new relay link over and run `deploy-fallback.sh` again.
 
 ## Open
 
