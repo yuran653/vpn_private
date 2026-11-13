@@ -127,6 +127,17 @@ bash scripts/verify-external.sh zcom-th vpn-fallback
 - When the first server is down, the fallback is down too. It answers a block, not an outage.
 - `verify-external.sh` asks Team Cymru's public DNS service which network the fallback's address belongs to, which names that address to the service.
 
+## Reserve CDN path (Gcore)
+
+A second way in through Gcore's CDN, for networks that throttle Cloudflare (ADR-0025). Decided on 2026-11-14, not built yet; the change is `changes/add-gcore-cdn-reserve/`. The main Cloudflare path stays the default; the reserve profile is imported in advance and switched by hand. There is no second server and no SSH alias: the reserve ends on the same VPS.
+
+- The reserve name is a CNAME to the Gcore resource and is never proxied by Cloudflare and never an A record to the VPS. It follows the word list (ADR-0021) and the phone check (ADR-0017) like any name that carries the tunnel.
+- The Gcore resource pulls from the VPS address over HTTPS on 443, with the origin Host header set to the main tunnel name, so the server's existing certificate covers the origin connection. Gcore issues the client-facing certificate for the reserve name. Caching is off. The resource is a one-time operator step per domain; no Gcore API token goes onto the VPS or into the repo.
+- The firewall admits Gcore's published ranges on the same ports as Cloudflare's. The ranges come from Gcore's public API without authentication: `https://api.gcore.com/cdn/public-ip-list` (individual addresses) or `https://api.gcore.com/cdn/public-net-list` (networks, fewer rules). Gcore changes the list over time, so the deploy refreshes it on each run, into `/root/vpn/gcore-ips.txt`, like `/root/vpn/cloudflare-ips-v4.txt`.
+- The reserve link is the main link with the reserve name in the address, `sni` and `host`; everything else is copied. It lives in `/root/vpn/vless-link-reserve.txt`, root-only, once the deploy writes it.
+- Before the reserve profile is handed out, the reserve name passes `scripts/check-name.sh` from a phone and the streaming checks of R-vpn-server-28.d pass: 30 MB down, 30 MB up, 60 s idle, then traffic again. Gcore's standard origin timeouts (5 s to connect, 30 s between reads) can cut an idle XHTTP connection; on a fail, report and do not hand the profile out.
+- The reserve answers throttling only. A block of the domain cuts both paths; that scenario stays with the fallback server.
+
 ## Cover site
 
 The names in this section are on `docs/blocked-names.txt` and are to be replaced ("Replacing the domain" below). Until then the scripts and the spec still carry them (R-vpn-server-20.a is marked `drift`).
@@ -137,7 +148,7 @@ The server is the website of `casedigestai.com`, `files.casedigestai.com` and `s
 - nginx on the host answers on port 80 (certificate challenge, redirect to HTTPS) and on port 443 with the Let's Encrypt certificate. One random path on 443 goes to the Xray XHTTP inbound on `127.0.0.1:10443`; every other path is the site. Its config, `/etc/nginx/conf.d/cover-site.conf`, is written by `deploy-vpn.sh`.
 - nginx also answers on Cloudflare's other HTTPS ports, 2053, 2083, 2087, 2096 and 8443, with the same site and tunnel path (ADR-0020). The main link stays on 443; `/root/vpn/vless-links-alt.txt` holds one link per other port, for a user whose network cuts 443. Not run on a server yet (2026-11-12).
 - The owner's links carry `fragment=1-10,5-20,tlshello` for the Happ app and no ECH setting; ECH is turned off for the Cloudflare zone (ADR-0021, `docs/redeploy.md` step 2). What each user sets in the app is in `docs/client-setup.md`.
-- ufw admits 80, 443 and the alternative ports only from Cloudflare's IPv4 ranges, fetched by the deploy script into `/root/vpn/cloudflare-ips-v4.txt`. Re-run the script when Cloudflare changes its ranges.
+- ufw admits 80, 443 and the alternative ports only from Cloudflare's IPv4 ranges, fetched by the deploy script into `/root/vpn/cloudflare-ips-v4.txt`. Re-run the script when Cloudflare changes its ranges. Once the reserve path exists, Gcore's ranges are admitted the same way (ADR-0025).
 - The pages come from a Docker container in `/opt/cover-site`, published on `127.0.0.1:8080` only. The source is the repo's `site/` folder; change the page there and re-run the deploy script.
 - The certificate renews through `certbot.timer`. `scripts/verify-vpn.sh` rehearses a renewal (R-vpn-server-16.b).
 - The removed Reality inbound is in `/root/vpn/inbound-previous.json`, root-only.
@@ -165,7 +176,7 @@ Client traffic does not leave from the server's own address. The deploy script r
 
 A flood aimed at the site names is absorbed by Cloudflare. A volumetric DDoS aimed at the server's own address, which is in DNS history and certificate logs from before ADR-0013, still fills the uplink before the firewall sees a packet. The practical recovery is a new IP address from the provider, then the A records in Cloudflare changed to it (still proxied), then a re-run of `deploy-vpn.sh`. The client link names the host, not the address, so it does not change.
 
-If Cloudflare is blocked or throttled where a user is, the VPN is unreachable there: today there is no second way in (flag 6 in `docs/censor-red-flags.md`). A fallback server reached directly is decided but not built (ADR-0018, "Fallback server" above).
+If Cloudflare is blocked or throttled where a user is, the VPN is unreachable there through the main path. The reserve path through Gcore is decided for exactly this case but not built yet (ADR-0025); the fallback server reached directly is likewise decided but not built (ADR-0018, "Fallback server" above).
 
 Secrets stay on the VPS, readable by root only:
 
@@ -178,6 +189,7 @@ Secrets stay on the VPS, readable by root only:
 | WARP registration (private key, device id, token) | `/root/vpn/warp.json` |
 | Relay link for the fallback server (ADR-0019) | `/root/vpn/relay-link.txt`, on both servers |
 | Links for the alternative ports, one per line (ADR-0020) | `/root/vpn/vless-links-alt.txt` |
+| Reserve link for the Gcore path (ADR-0025), once written | `/root/vpn/vless-link-reserve.txt` |
 | Original netplan files | `/root/vpn/netplan-backup/` |
 
 To show the client link: `ssh zcom-th 'sudo -n cat /root/vpn/vless-link.txt'`. Do not paste it into the repo (rule 2).
@@ -205,4 +217,3 @@ Expected: the hostname, a country, kernel `6.x`. Since 2026-11-10 `ifconfig.co` 
 ## Replacing the domain
 
 `casedigestai.com` is on `docs/blocked-names.txt` (blocked on Russian mobile networks, 2026-11-12), so the site and the link have to move to a new domain (ADR-0017). The order is in `docs/redeploy.md`, steps 1 to 3 and 8 to 12. The name check (`scripts/check-name.sh`, from a phone on mobile data in each target country) runs after the deploy and before any device gets the link: it fails a name that has no server answering behind it.
-
