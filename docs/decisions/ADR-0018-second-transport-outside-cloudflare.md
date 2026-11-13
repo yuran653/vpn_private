@@ -1,9 +1,10 @@
 # ADR-0018: A second transport that does not pass through Cloudflare
 
-- Status: accepted; the second server's own WARP exit superseded by ADR-0019
+- Status: accepted; the second server's own WARP exit superseded by ADR-0019; the rejection of a second CDN superseded by ADR-0025
 - Date: 2026-11-12
 - Supersedes: ADR-0013 in part (the "CDN only" choice and its first "Do not" line) and ADR-0012 in part (its "Do not" line on a third-party Reality cover site, for the second server only). It narrows ADR-0013's two other "Do not" lines to the server behind Cloudflare, and adopts for the second server the SSH restriction that ADR-0005 rejected for the first
 - Change: none yet
+- Note (2026-11-14): the rejected "second CDN" alternative below is superseded by ADR-0025 for the specific case of Cloudflare throttling: a Gcore path is added as a hot reserve in front of the same server. The reason given here still stands for a name block, which the reserve does not answer. The fallback server itself is unchanged.
 
 ## Context
 
@@ -32,7 +33,7 @@ The owner chose on 2026-11-12:
 |---|---|
 | Stay CDN only and replace the domain each time it is flagged | It is the current plan and stays the first step. Alone it leaves every user cut off between a block and the next redeploy, and Cloudflare itself is throttled in Russia and has no nodes in China on the free plan. |
 | Reality on the first server, or on a second address of it | Opens 443 to everyone on the Cloudflare origin, against ADR-0013's second "Do not" line, and a fault or a block at the provider takes both transports. |
-| A second CDN (Gcore, Fastly, CloudFront) in front of the same server | Still a name the censor can cut, as Beeline did. It answers a Cloudflare block but not a name block. |
+| A second CDN (Gcore, Fastly, CloudFront) in front of the same server | Still a name the censor can cut, as Beeline did. It answers a Cloudflare block but not a name block. (Superseded by ADR-0025 for the throttling scenario: a Gcore reserve is added on 2026-11-14.) |
 | Domain fronting on Cloudflare | Cloudflare refuses a request whose TLS name and Host header belong to different zones. Its encrypted hello (ECH) is blocked in Russia and China. |
 | A QUIC transport (Hysteria2, TUIC) as the second one | UDP is rate-limited or blocked on many networks in all three countries. A candidate for a third transport, not the second. |
 | WireGuard or OpenVPN | Both have signatures that all three censors match. |

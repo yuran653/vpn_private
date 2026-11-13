@@ -17,7 +17,7 @@ Format: `- Do not <approach>: <one-line reason>. (ADR-NNNN)`
 - Do not use as the Reality cover site a third-party site whose addresses are not announced by the same AS number as the VPS's address, or point the owner's own domain straight at a VPS address: the first does not match the address, the second ties a name to a hosting address. (ADR-0012, reworded by ADR-0018)
 - Do not publish a Docker container port on a public address: Docker's firewall rules bypass ufw. Publish on `127.0.0.1` and put the host web server in front. (ADR-0012)
 - Do not give clients a link to the address of the server behind Cloudflare, or open a second way in on that server: its address must stay unused and unanswering. A way in outside Cloudflare runs on a separate server and is handed out only as a fallback. (ADR-0013, reworded by ADR-0018)
-- On the server behind Cloudflare, do not admit 80/tcp or 443/tcp from outside Cloudflare's published ranges: that server's address must not answer probes directly. The fallback server admits 443/tcp from anywhere and answers as its cover site (ADR-0018). (ADR-0013)
+- On the server behind Cloudflare, do not admit 80/tcp or 443/tcp from outside Cloudflare's published ranges: that server's address must not answer probes directly. The fallback server admits 443/tcp from anywhere and answers as its cover site (ADR-0018); the reserve path adds Gcore's published ranges (ADR-0025). (ADR-0013)
 - On the server behind Cloudflare, do not limit connections per source address on port 443: every client arrives from a shared Cloudflare address. (ADR-0013)
 - Do not set `xPaddingBytes` on the server to a range the client link does not share: the server rejects requests whose padding is outside its range. (ADR-0014)
 - Do not enable `http2` on nginx's listener, and in a client link that goes through Cloudflare do not put `h2` in `alpn` or set a browser `fp` (`chrome`, `firefox`, `safari`, `ios`, `edge`): Russian mobile networks hang HTTP/2 to our names, and an `http2` listener answers an HTTP/1.1 tunnel client with raw HTTP/2 frames, while a browser `fp` makes the client offer `h2` anyway. The fallback's direct Reality link is not such a link. (ADR-0015)
@@ -31,6 +31,7 @@ Format: `- Do not <approach>: <one-line reason>. (ADR-NNNN)`
 - Do not leave the reboot time to the time zone of the provider's image: the time is local, so an image on UTC reboots the host at 08:00 in Bangkok. The deploy sets the zone. (ADR-0022)
 - Do not commit directly to `main`: every change arrives through a pull request, so it has a record. (ADR-0023)
 - Do not commit documentation, specifications or decision records in a language other than English: English is the single language of the repository's written record. (ADR-0024)
+- Do not respond to Cloudflare throttling with a paid Cloudflare plan or by moving the only path to another CDN: the throttle is applied by Russian ISPs to Cloudflare's network, not to the account, and the Gcore path is an addition to the Cloudflare path, not a replacement. (ADR-0025)
 
 ## Log
 
@@ -50,14 +51,15 @@ One row per decision record in this folder. Files are named `ADR-NNNN-<slug>.md`
 | [ADR-0010](ADR-0010-subscription-through-tunnel.md) | Subscription served through the tunnel | superseded by ADR-0011 | 2026-11-11 |
 | [ADR-0011](ADR-0011-no-subscription-name-in-the-link.md) | No subscription; the profile name travels in the client link | accepted | 2026-11-11 |
 | [ADR-0012](ADR-0012-own-domain-cover-site.md) | Cover site on the owner's own domain, served from the VPS | accepted; the Reality inbound superseded by ADR-0013, the cover-site "Do not" line reworded by ADR-0018 | 2026-11-12 |
-| [ADR-0013](ADR-0013-clients-only-through-cloudflare.md) | Clients reach the server only through Cloudflare | accepted; "CDN only" superseded by ADR-0018 | 2026-11-12 |
+| [ADR-0013](ADR-0013-clients-only-through-cloudflare.md) | Clients reach the server only through Cloudflare | accepted; "CDN only" superseded by ADR-0018; the firewall line extended to Gcore's ranges by ADR-0025 | 2026-11-12 |
 | [ADR-0014](ADR-0014-browser-like-connections-files-name.md) | Browser-like connection rotation and a cover name for heavy traffic | accepted | 2026-11-12 |
 | [ADR-0015](ADR-0015-tunnel-over-http1.md) | Tunnel over HTTP/1.1, passed by proxy_pass | accepted | 2026-11-12 |
 | [ADR-0017](ADR-0017-vet-names-before-use.md) | Names are tried from a mobile network before use, and blocked names are listed | accepted | 2026-11-12 |
-| [ADR-0018](ADR-0018-second-transport-outside-cloudflare.md) | A second transport that does not pass through Cloudflare | accepted; the second server's own WARP exit superseded by ADR-0019 | 2026-11-12 |
+| [ADR-0018](ADR-0018-second-transport-outside-cloudflare.md) | A second transport that does not pass through Cloudflare | accepted; the second server's own WARP exit superseded by ADR-0019; the rejection of a second CDN superseded by ADR-0025 | 2026-11-12 |
 | [ADR-0019](ADR-0019-fallback-relays-to-first-server.md) | The fallback server is an entry only and relays to the first server | accepted | 2026-11-12 |
 | [ADR-0020](ADR-0020-alternative-cloudflare-ports.md) | The tunnel answers on Cloudflare's other HTTPS ports too | accepted | 2026-11-12 |
 | [ADR-0021](ADR-0021-protect-the-name.md) | Measures that keep the name from being flagged | accepted | 2026-11-12 |
 | [ADR-0022](ADR-0022-reboot-at-0100-bangkok.md) | Reboot at 01:00 Bangkok time, with the time zone set by the deploy | accepted | 2026-11-12 |
 | [ADR-0023](ADR-0023-agent-merges-its-own-pull-requests.md) | The agent opens, pushes and merges its own pull requests | accepted | 2026-11-12 |
 | [ADR-0024](ADR-0024-docs-in-english.md) | Documentation and specifications are written in English | accepted | 2026-11-13 |
+| [ADR-0025](ADR-0025-gcore-cdn-reserve.md) | A reserve path through Gcore for Cloudflare throttling | accepted | 2026-11-14 |
