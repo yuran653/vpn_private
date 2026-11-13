@@ -30,6 +30,7 @@ Format: `- Do not <approach>: <one-line reason>. (ADR-NNNN)`
 - Do not use a site name that contains a word from `docs/avoided-name-words.txt`: censors match names by keyword. (ADR-0021)
 - Do not leave the reboot time to the time zone of the provider's image: the time is local, so an image on UTC reboots the host at 08:00 in Bangkok. The deploy sets the zone. (ADR-0022)
 - Do not commit directly to `main`: every change arrives through a pull request, so it has a record. (ADR-0023)
+- Do not commit documentation, specifications or decision records in a language other than English: English is the single language of the repository's written record. (ADR-0024)
 
 ## Log
 
@@ -59,3 +60,4 @@ One row per decision record in this folder. Files are named `ADR-NNNN-<slug>.md`
 | [ADR-0021](ADR-0021-protect-the-name.md) | Measures that keep the name from being flagged | accepted | 2026-11-12 |
 | [ADR-0022](ADR-0022-reboot-at-0100-bangkok.md) | Reboot at 01:00 Bangkok time, with the time zone set by the deploy | accepted | 2026-11-12 |
 | [ADR-0023](ADR-0023-agent-merges-its-own-pull-requests.md) | The agent opens, pushes and merges its own pull requests | accepted | 2026-11-12 |
+| [ADR-0024](ADR-0024-docs-in-english.md) | Documentation and specifications are written in English | accepted | 2026-11-13 |

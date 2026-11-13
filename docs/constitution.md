@@ -17,8 +17,9 @@ Rules Personal VPS located in Thailand does not trade off. Each rule names what 
 | C-04 | Dependencies between modules follow `docs/architecture.md`. | [TODO-CLARIFY: dependency-boundary check] | discipline-only |
 | C-05 | When an implemented approach is replaced, the reason is recorded as a decision with a "Do not" line in `docs/decisions/INDEX.md`. | Review of the change folder | discipline-only |
 | C-06 | Tests are not weakened or deleted to make them pass. A test changes only when the spec it verifies changed. | Review | discipline-only |
+| C-07 | Documentation, specifications and decision records are written in English only (ADR-0024). | Review | discipline-only |
 
-Add project-specific rules below C-06. IDs are never reused.
+Add project-specific rules below C-07. IDs are never reused.
 
 ## Exceptions
 
