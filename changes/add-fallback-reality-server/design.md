@@ -6,6 +6,8 @@ The second server gets its own deploy and verify scripts. The host steps both se
 
 On the second server Xray itself holds 443/tcp with a VLESS inbound using Reality and the Vision flow. Reality hands every connection that lacks the key to the cover site, a third-party site in the same provider network, chosen after the provider is known and kept in the panel's inbound on the server, not in the repo. No nginx, no certificate, no Docker and no WARP on this host.
 
+The cover name is found from passive public sources only (R-vpn-fallback-02.d): a search in a public scan database over data somebody else already collected, certificate transparency logs, and the provider's own and its customers' public sites. No active scan of the provider's ranges is run for this: a hoster's abuse complaint can cost the VPS before it carries any traffic.
+
 The second server's only outbound is the relay (ADR-0019): VLESS over XHTTP to the first server's name through Cloudflare, built from a relay link that the first server issues for a second client, `relay`. Port 53 from clients goes into the relay too, so the first server answers it. The operator moves the relay link from one server to the other through a pipe between two SSH sessions, so it is never printed or stored on the workstation.
 
 The baseline script takes an optional list of addresses for SSH. The second server is always hardened with it.
@@ -42,6 +44,7 @@ New modules or dependencies between modules: none. `docs/architecture.md` lists 
 | Cover name as a constant in the repo | It names the provider network and so narrows down the server. |
 | `ufw limit` or fail2ban alone instead of an address list for SSH | The port still answers probes (flag 5), and ADR-0005 forbids `ufw limit`. |
 | Moving SSH to another port | A probe still finds the banner. |
+| Actively scanning the provider's address ranges for a cover site (a Reality cover scanner or similar) | Active scans of other customers' addresses draw abuse complaints; a hoster can suspend the VPS before it is used. Cover names come from passive public sources (R-vpn-fallback-02.d). |
 
 Decision record needed: ADR-0019 (written: the fallback relays to the first server); and a reworded ADR-0015 line if the owner confirms it.
 
@@ -52,6 +55,7 @@ Decision record needed: ADR-0019 (written: the fallback relays to the first serv
 | R-vpn-fallback-01.a, 01.b | `scripts/verify-fallback.sh` |
 | R-vpn-fallback-02.a, 02.c | `scripts/verify-external.sh` |
 | R-vpn-fallback-02.b | `scripts/verify-external.sh`, comparing the network (AS number) of the cover name's address and the server's |
+| R-vpn-fallback-02.d | untested: a process the operator follows when choosing the cover name, which no script can observe |
 | R-vpn-fallback-03.a, 03.b | `scripts/verify-fallback.sh` |
 | R-vpn-fallback-03.c | `scripts/verify-external.sh` |
 | R-vpn-fallback-03.d | untested from the workstation, which is on the list; checked once by hand from another network |
