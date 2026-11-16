@@ -24,6 +24,7 @@ Format: `- Do not <approach>: <one-line reason>. (ADR-NNNN)`
 - Do not give any device a link that carries a name before `scripts/check-name.sh` passes for it from a mobile network in each target country (`docs/vps-access.md`, "Target countries"), and do not reuse a name or a domain listed in `docs/blocked-names.txt`: a flagged domain made every uploaded request to its names hang on a Russian mobile network. (ADR-0017)
 - Do not hand out the direct Reality link as the default link: the user's ISP then sees a hosting provider's address (flag 2). Give a user the fallback link only after the main link and the links for the other ports have failed on that user's network. (ADR-0018)
 - Do not let the second server take clients while its SSH port is open to any address the operator did not list when the baseline was last applied: its address is visible to every client's ISP and to probes. (ADR-0018)
+- Do not scan a provider's address ranges to find the fallback's Reality cover site: active scans of other customers' addresses draw abuse complaints and can cost the VPS; cover names come from passive public sources. (ADR-0018, amended 2026-11-15)
 - Do not give the fallback server a way out of its own (a `freedom` outbound, or its own WARP tunnel): its users would exit outside Thailand, and a second way out leaks when the first server is unreachable. It forwards to the first server only. (ADR-0019)
 - Do not admit 2053, 2083, 2087, 2096 or 8443 from outside Cloudflare's published ranges, and do not put the panel or any other service on them: nginx holds them for the site and the tunnel. (ADR-0020)
 - Do not turn ECH on for the zone or put an ECH setting in a client link: Cloudflare's ECH is blocked in Russia, and encrypted server names are blocked in China. (ADR-0021)
@@ -55,7 +56,7 @@ One row per decision record in this folder. Files are named `ADR-NNNN-<slug>.md`
 | [ADR-0014](ADR-0014-browser-like-connections-files-name.md) | Browser-like connection rotation and a cover name for heavy traffic | accepted | 2026-11-12 |
 | [ADR-0015](ADR-0015-tunnel-over-http1.md) | Tunnel over HTTP/1.1, passed by proxy_pass | accepted | 2026-11-12 |
 | [ADR-0017](ADR-0017-vet-names-before-use.md) | Names are tried from a mobile network before use, and blocked names are listed | accepted | 2026-11-12 |
-| [ADR-0018](ADR-0018-second-transport-outside-cloudflare.md) | A second transport that does not pass through Cloudflare | accepted; the second server's own WARP exit superseded by ADR-0019; the rejection of a second CDN superseded by ADR-0025 | 2026-11-12 |
+| [ADR-0018](ADR-0018-second-transport-outside-cloudflare.md) | A second transport that does not pass through Cloudflare | accepted; the second server's own WARP exit superseded by ADR-0019; the rejection of a second CDN superseded by ADR-0025; cover-site selection restricted to passive sources 2026-11-15 | 2026-11-12 |
 | [ADR-0019](ADR-0019-fallback-relays-to-first-server.md) | The fallback server is an entry only and relays to the first server | accepted | 2026-11-12 |
 | [ADR-0020](ADR-0020-alternative-cloudflare-ports.md) | The tunnel answers on Cloudflare's other HTTPS ports too | accepted | 2026-11-12 |
 | [ADR-0021](ADR-0021-protect-the-name.md) | Measures that keep the name from being flagged | accepted | 2026-11-12 |

@@ -98,6 +98,8 @@ bash scripts/check-host.sh <address> <cover name>      # exit 0 pass, 1 fail, 2 
 
 The cover name is a third-party site hosted in the same provider network as the VPS (its addresses announced by the same AS number), one that answers TLS 1.3. Never one of the owner's names.
 
+The cover name is found from passive public sources only (R-vpn-fallback-02.d): a Shodan search over data somebody else already collected, certificate transparency logs, the provider's own and its customers' public sites. Never scan the provider's address ranges for it, with a Reality cover scanner or by hand: active scans of other customers' addresses draw abuse complaints, and a hoster can suspend the VPS before it carries any traffic.
+
 Baseline first, with SSH closed to everyone but the listed addresses. `deploy-fallback.sh` refuses to run otherwise:
 
 ```bash

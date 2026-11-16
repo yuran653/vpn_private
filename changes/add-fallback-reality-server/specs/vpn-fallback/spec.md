@@ -18,6 +18,7 @@ A party without the link that connects to the second server sees a third-party w
 - **R-vpn-fallback-02.a** WHEN a TLS client without the link connects to port 443 of the second server with the cover name THEN it receives that site's publicly trusted certificate and its page.
 - **R-vpn-fallback-02.b** WHEN the cover name is resolved from the internet THEN it resolves only to addresses announced by the same AS number as the second server's address, and the name is not on `docs/blocked-names.txt` and is not one of the owner's.
 - **R-vpn-fallback-02.c** WHEN a TLS client connects to port 443 with another name or with no name THEN it gets the cover site's answer, not a reset that differs from the cover site's own.
+- **R-vpn-fallback-02.d** WHEN a cover name is chosen THEN it comes from passive public sources only (a public scan-database search, certificate transparency logs, the provider's own and its customers' public sites), and no active scan of the provider's address ranges is run for this purpose: active scans of other customers' addresses draw abuse complaints and can cost the VPS before it is used.
 
 ### R-vpn-fallback-03: Nothing else answers
 

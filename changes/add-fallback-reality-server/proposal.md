@@ -8,7 +8,7 @@ The only way in, through Cloudflare on one domain, failed on a Russian mobile ne
 
 - A second server exists, on its own VPS and address. A client holding its link connects to that address directly on 443/tcp (VLESS with Reality and Vision) and reaches the internet through the first server: the second server is an entry only and forwards everything to the first one through Cloudflare, so the exit is the first server's, in Thailand, with its protections (ADR-0019).
 - The first server issues a second client ID, `relay`, for the second server.
-- A party without the link that connects to 443 on that address gets the certificate and pages of a third-party site hosted in the same provider network.
+- A party without the link that connects to 443 on that address gets the certificate and pages of a third-party site hosted in the same provider network. The cover name is chosen from passive public sources only; no active scan of the provider's ranges is run to find one (R-vpn-fallback-02.d, added 2026-11-15).
 - That server's SSH port answers only the operator's known addresses.
 - A check run from a phone on mobile data tells whether a candidate address can carry the fallback from that network, before the server is kept.
 - The first server's own link is unchanged.
@@ -24,6 +24,7 @@ The only way in, through Cloudflare on one domain, failed on a Russian mobile ne
 ## Out of scope
 
 - An entry relay inside Russia, a host with a premium route to China, and a QUIC transport: later steps, each with its own decision (ADR-0018).
+- NaiveProxy as an additional transport: a later candidate, noted 2026-11-15 because its browser network stack is a useful fallback shape; no decision to build it.
 - Restricting SSH on the first server. The baseline gains the option; using it there is a separate change.
 - Automatic switching between the two links in the client app. The user picks the fallback profile by hand.
 - Per-user client IDs. One client, as on the first server.
