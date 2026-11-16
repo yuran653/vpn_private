@@ -5,6 +5,7 @@
 - Supersedes: ADR-0013 in part (the "CDN only" choice and its first "Do not" line) and ADR-0012 in part (its "Do not" line on a third-party Reality cover site, for the second server only). It narrows ADR-0013's two other "Do not" lines to the server behind Cloudflare, and adopts for the second server the SSH restriction that ADR-0005 rejected for the first
 - Change: none yet
 - Note (2026-11-14): the rejected "second CDN" alternative below is superseded by ADR-0025 for the specific case of Cloudflare throttling: a Gcore path is added as a hot reserve in front of the same server. The reason given here still stands for a name block, which the reserve does not answer. The fallback server itself is unchanged.
+- Note (2026-11-15): the cover name for this server is selected from passive public sources only (a public scan-database search, certificate transparency logs, the provider's public sites). Actively scanning the provider's address ranges to find one is forbidden: such scans draw abuse complaints and can cost the VPS before it is used. Recorded as R-vpn-fallback-02.d and as a "Do not" line in the index.
 
 ## Context
 
@@ -52,3 +53,4 @@ The owner chose on 2026-11-12:
 - Do not use as the Reality cover site a third-party site whose addresses are not announced by the same AS number as the VPS's address, or point the owner's own domain straight at a VPS address: the first does not match the address, the second ties a name to a hosting address. (ADR-0012, reworded by ADR-0018)
 - Do not hand out the direct Reality link as the default link: the user's ISP then sees a hosting provider's address (flag 2). Give a user the fallback link only after the main link and the links for the other ports have failed on that user's network. (ADR-0018)
 - Do not let the second server take clients while its SSH port is open to any address the operator did not list when the baseline was last applied: its address is visible to every client's ISP and to probes. (ADR-0018)
+- Do not scan a provider's address ranges to find the fallback's Reality cover site: active scans of other customers' addresses draw abuse complaints and can cost the VPS; cover names come from passive public sources. (ADR-0018, amended 2026-11-15)
