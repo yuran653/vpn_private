@@ -4,6 +4,7 @@
 - Date: 2026-11-12
 - Supersedes: none
 - Change: `changes/protect-the-name/` (open)
+- Note (2026-11-15): the rejected alternative below, "a routing profile delivered with the link", is amended. The objection was that a plain `vless://` link carries no routing rules and a subscription needs a public address. Happ's routing deeplinks (`happ://routing/onadd/{base64}`) and routing-config file imports (`.json`, `.happ`) carry a ready-made profile with the link, with no subscription and no public address, so ADR-0011 is unaffected. The client guide now hands out the rules this way, including the DNS split (Russian names resolve locally, the rest through the server's resolver). A full Xray JSON config is still not the carrier: Happ passes it to the core as-is and its routing profiles do not apply.
 
 ## Context
 
@@ -33,7 +34,7 @@ Two of them are settings of the client app, which the server cannot enforce.
 | ECH on, to hide the name | It is the hello that is blocked in Russia and China, not the name inside it. |
 | Fragmentation only for users in Iran, where it is known to help | The owner asked for it in the client. One link for everyone is simpler to hand out; a user for whom it breaks the connection turns it off in the app. |
 | Enforce split tunneling on the server | The server cannot tell which sites a user could have reached directly. |
-| A routing profile delivered with the link | A plain `vless://` link carries no routing rules, and a subscription needs a public address (ADR-0011). |
+| A routing profile delivered with the link | Amended 2026-11-15 (see the note above): allowed as a Happ routing deeplink or file, without a subscription. The original objection held only for delivery inside a `vless://` link or through a subscription. |
 
 ## Consequences
 

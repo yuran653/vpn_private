@@ -8,18 +8,46 @@ Import the link you were given. Do not forward it and do not post it anywhere: a
 
 ## 2. Split tunneling
 
-Send only what needs the tunnel through it. Less traffic on the name makes it stand out less, and local sites work faster.
+Send only what needs the tunnel through it. Less traffic on the name makes it stand out less, and local sites work faster. The recommended scheme also limits what foreign intermediaries (the CDN, the hosting provider, the WARP exit) can learn: Russian destinations stay inside Russia and are never visible to them.
 
-In Happ this is a routing profile, under Settings, Routing rules. Two ways to set it, the first is the simpler:
+### The recommended scheme
 
-| Rule | What goes through the tunnel | What goes direct |
+Rules are evaluated top to bottom, first match wins:
+
+| Order | Rule | Action |
 |---|---|---|
-| Local sites direct | Everything else | Sites and addresses of your own country (for example `geosite:category-ru` and `geoip:ru`, or `cn`, or `ir`), and private addresses |
-| Only blocked sites through the tunnel | The sites you list | Everything else |
+| 1 | Private and local addresses | Direct |
+| 2 | `geosite:category-ru` (Russian sites) | Direct |
+| 3 | `geoip:ru` (Russian addresses, when no domain rule matched) | Direct |
+| 4 | Everything else (default) | Tunnel |
 
-Know what this means: a site reached directly sees your real address, and your ISP sees that you visited it, the same as without a VPN. If you want everything hidden, leave split tunneling off.
+The category lists are maintained upstream and ship with the app and its core; nobody writes address lists by hand. A specific service that must always appear from the tunnel country gets an explicit domain rule above the default (for example a `geosite:google` rule), but the default already covers everything non-Russian.
 
-[TODO-CLARIFY: is one ready-made routing profile per country to be handed out with the link, and in which form does Happ import it?]
+The alternative scheme, "only the listed sites through the tunnel", inverts the default: the listed services go through the tunnel, everything else is direct. It sends even less traffic through the tunnel, at the cost of maintaining the list.
+
+Know what this means: a site reached directly sees your real address, and your ISP sees that you visited it, the same as without a VPN. A Russian service you want to hide the visit to is an explicit exception that goes through the tunnel. If you want everything hidden, leave split tunneling off.
+
+### DNS follows the route
+
+Routing rules alone are not enough. If every DNS query goes to the server's resolver, the foreign exit sees the Russian names you visit even when their traffic goes direct. The DNS rules must match the routing rules:
+
+| Query for | Resolved by |
+|---|---|
+| `geosite:category-ru` and private names | A local resolver (the ISP's, or a local encrypted resolver) |
+| Everything else | The server, through the tunnel (DNS-over-HTTPS there) |
+
+### Getting the rules without typing them
+
+The rules are handed out with the link as a ready-made Happ routing profile, not typed by the user:
+
+- A **routing deeplink**: `happ://routing/onadd/{base64}` carries the whole profile in the link itself. Opening it adds and activates the profile; a later link with the same profile name replaces it, which is how updated rules are handed out.
+- A **file**: Happ imports routing configs from `.json` and `.happ` files.
+
+So a user receives two artifacts: the `vless://` link and the routing deeplink (or file). No subscription and no public address is involved, so ADR-0011 is unaffected. The profile's DNS fields carry the DNS split above.
+
+Do not distribute a full Xray JSON config instead: Happ passes such a config to the core as-is, and its own routing profiles and interface settings then do not apply. The supported carrier is the link plus the Happ routing profile.
+
+[TODO-CLARIFY: verify on an iPhone and an Android phone that the deeplink and the file import apply the profile, and that the DNS fields behave as described.]
 
 ## 3. Hello fragmentation
 
