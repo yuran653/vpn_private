@@ -17,13 +17,16 @@ Rules are evaluated top to bottom, first match wins:
 | Order | Rule | Action |
 |---|---|---|
 | 1 | Private and local addresses | Direct |
-| 2 | `geosite:category-ru` (Russian sites) | Direct |
-| 3 | `geoip:ru` (Russian addresses, when no domain rule matched) | Direct |
-| 4 | Everything else (default) | Tunnel |
+| 2 | `geosite:google` | **Tunnel, always** |
+| 3 | `geosite:category-ru` (Russian sites) | Direct |
+| 4 | `geoip:ru` (Russian addresses, when no domain rule matched) | Direct |
+| 5 | Everything else (default) | Tunnel |
 
-The category lists are maintained upstream and ship with the app and its core; nobody writes address lists by hand. A specific service that must always appear from the tunnel country gets an explicit domain rule above the default (for example a `geosite:google` rule), but the default already covers everything non-Russian.
+The Google rule is mandatory, not optional, and it sits **above** the Russian rules: no Google traffic may leak to the direct path, even if a Google domain is miscategorized in a list or a list changes. Any service whose traffic must never leave from the real address gets the same kind of explicit rule above the direct rules.
 
-The alternative scheme, "only the listed sites through the tunnel", inverts the default: the listed services go through the tunnel, everything else is direct. It sends even less traffic through the tunnel, at the cost of maintaining the list.
+The other category lists are maintained upstream and ship with the app and its core; nobody writes address lists by hand.
+
+The alternative scheme, "only the listed sites through the tunnel", inverts the default: the listed services go through the tunnel, everything else is direct. It sends even less traffic through the tunnel, at the cost of maintaining the list. The Google rule is mandatory there too: Google is always on the tunnel list.
 
 Know what this means: a site reached directly sees your real address, and your ISP sees that you visited it, the same as without a VPN. A Russian service you want to hide the visit to is an explicit exception that goes through the tunnel. If you want everything hidden, leave split tunneling off.
 
@@ -34,7 +37,9 @@ Routing rules alone are not enough. If every DNS query goes to the server's reso
 | Query for | Resolved by |
 |---|---|
 | `geosite:category-ru` and private names | A local resolver (the ISP's, or a local encrypted resolver) |
-| Everything else | The server, through the tunnel (DNS-over-HTTPS there) |
+| Everything else, including `geosite:google` | The server, through the tunnel (DNS-over-HTTPS there) |
+
+Google names resolve through the server, never locally: a locally resolved Google query would both leak the visit to the local network and return an address chosen for the real location.
 
 ### Getting the rules without typing them
 
