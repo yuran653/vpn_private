@@ -12,9 +12,10 @@ Tasks 1 and 3 to 8 need a VPS to pass their checks; neither server exists on 202
 - [ ] 3. Move the shared host steps into one file and add the `relay` client (files: `scripts/lib/host-common.sh`, `scripts/deploy-vpn.sh`, `scripts/verify-vpn.sh`; criteria: R-vpn-fallback-05.b, R-vpn-server-22)
   Check: the redeploy of the first server (`docs/redeploy.md`) ends with both verify scripts passing, including the R-vpn-server-22 checks.
   Written 2026-11-12: the moved lines were copied by line range and the old script compared with the two new files line by line; `bash -n` passes. The `relay` client uses `POST panel/api/clients/add` with `{client, inboundIds}`, read from the source of the pinned 3x-ui v3.11.0, not tried against a panel. To confirm on the first run: the new client shows up in the inbound's `settings.clients`, which the link is built from.
-- [ ] 4. Write the fallback deploy (files: `scripts/deploy-fallback.sh`; criteria: R-vpn-fallback-01, 02.a, 02.c, 03.a to 03.c, 04, 07)
+- [ ] 4. Write the fallback deploy (files: `scripts/deploy-fallback.sh`; criteria: R-vpn-fallback-01, 02.a to 02.c, 03.a to 03.c, 04, 07)
   Check: on the second VPS the script ends with `[fallback] done`; a second run leaves the link's checksum unchanged.
   Written 2026-11-12: `bash -n` passes; the relay-link parser was run against invented links (a good one accepted; an address instead of a name, a non-XHTTP link and a non-link refused). The Reality inbound has the shape that worked on the first deployment (2026-11-10). To confirm on the first run: the panel keeps the client's `flow`, and the generated Xray config has no `dns` block.
+  Amended 2026-11-15: the cover name passed to the script is chosen from passive public sources only, never by actively scanning the provider's ranges (R-vpn-fallback-02.d).
 - [ ] 5. Write the inside checks (files: `scripts/verify-fallback.sh`; criteria: R-vpn-fallback-01, 02.a, 02.c, 03.a, 03.b, 04, 05.a, 05.c, 07.a, 07.c, 07.d)
   Check: every check passes on the second VPS, and one fails when its criterion is broken by hand.
   Written 2026-11-12: `bash -n` passes. Nothing else could be run off a server.
