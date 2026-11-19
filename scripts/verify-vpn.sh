@@ -15,9 +15,9 @@
 set -uo pipefail
 
 readonly LINK_FILE=/root/vpn/vless-link.txt
-# The fallback server's own client and its link (ADR-0019, R-vpn-server-22).
-readonly RELAY_LINK_FILE=/root/vpn/relay-link.txt
-readonly RELAY_PORT=10813
+# The dedicated Thai exit settings (ADR-0026). The file is read for the
+# protocol and expected public IPv4 address; credentials are never printed.
+readonly EXIT_PROXY_FILE=/root/vpn/exit-proxy.env
 readonly XRAY=/usr/local/x-ui/bin/xray-linux-amd64
 readonly XRAY_CONFIG=/usr/local/x-ui/bin/config.json
 readonly SOCKS_PORT=10808
@@ -53,6 +53,14 @@ check() { # check <criterion> <description> <command...>
 
 [ "$(id -u)" -eq 0 ] || { echo "run as root: sudo -n bash $0" >&2; exit 2; }
 [ -r "$LINK_FILE" ] || { echo "no client link at $LINK_FILE; run deploy-vpn.sh first" >&2; exit 2; }
+[ -r "$EXIT_PROXY_FILE" ] || { echo "no exit proxy settings at $EXIT_PROXY_FILE; run deploy-vpn.sh first" >&2; exit 2; }
+set -a
+# shellcheck disable=SC1090
+. "$EXIT_PROXY_FILE"
+set +a
+: "${EXIT_PROXY_PROTOCOL:?}" "${EXPECTED_EXIT_IPV4:?}"
+case "$EXIT_PROXY_PROTOCOL" in socks|http) ;; *) echo "EXIT_PROXY_PROTOCOL must be socks or http" >&2; exit 2 ;; esac
+printf '%s' "$EXPECTED_EXIT_IPV4" | grep -Eq '^([0-9]{1,3}\.){3}[0-9]{1,3}$' || { echo "EXPECTED_EXIT_IPV4 must be an IPv4 address" >&2; exit 2; }
 
 work=$(mktemp -d)
 client_pid=""
@@ -102,10 +110,10 @@ if transport == "udp":
     s.sendall(b"\x05\x03\x00\x01\x00\x00\x00\x00\x00\x00")
     reply = s.recv(10)
     assert reply[1] == 0
-    relay = ("127.0.0.1", struct.unpack(">H", reply[8:10])[0])
+    udp_target = ("127.0.0.1", struct.unpack(">H", reply[8:10])[0])
     u = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     u.settimeout(10)
-    u.sendto(b"\x00\x00\x00\x01" + socket.inet_aton(resolver) + struct.pack(">H", 53) + q, relay)
+    u.sendto(b"\x00\x00\x00\x01" + socket.inet_aton(resolver) + struct.pack(">H", 53) + q, udp_target)
     try:
         data = u.recvfrom(4096)[0][10:]     # drop the 10-byte SOCKS header
     except socket.timeout:
@@ -138,7 +146,8 @@ done
 via() { curl -s --max-time 20 --socks5-hostname "127.0.0.1:$SOCKS_PORT" "$@"; }
 
 # R-vpn-server-01.a: a client using the issued link reaches the internet, and the site
-# sees an IPv4 address that is not the server's own (traffic leaves through WARP).
+# sees an IPv4 address that is not the server's own. R-vpn-server-12.a checks
+# that it is the configured dedicated Thai exit.
 is_ipv4() { printf '%s' "$1" | grep -Eq '^([0-9]{1,3}\.){3}[0-9]{1,3}$'; }
 exit_ip=$(via https://api.ipify.org)
 if ! is_ipv4 "$exit_ip"; then
@@ -196,33 +205,32 @@ done
 check R-vpn-server-03.b "all tunnel DNS resolvers are DNS-over-HTTPS" \
     jq -e '(.dns.servers | length) > 0 and (.dns.servers | all(type == "string" and startswith("https")))' "$XRAY_CONFIG"
 
-# R-vpn-server-12.a: client traffic leaves through Cloudflare WARP. Cloudflare's
-# connection report says so itself.
+# R-vpn-server-12.a: the exit is exactly the dedicated Thai IPv4 configured
+# for the deployment, not merely some other address.
+if [ "$exit_ip" = "$EXPECTED_EXIT_IPV4" ]; then
+    pass R-vpn-server-12.a "tunnel exit is the configured dedicated Thai IPv4"
+else
+    fail R-vpn-server-12.a "tunnel exit is '${exit_ip:-none}', not the configured dedicated Thai IPv4"
+fi
+
+# R-vpn-server-12.b: Cloudflare places the exit in Thailand and does not see it
+# as WARP. A WARP answer means the old exit came back and must fail verification.
 trace=$(via https://www.cloudflare.com/cdn-cgi/trace)
 warp_state=$(printf '%s\n' "$trace" | sed -n 's/^warp=//p')
+exit_country=$(printf '%s\n' "$trace" | sed -n 's/^loc=//p')
 case "$warp_state" in
-    on|plus) pass R-vpn-server-12.a "Cloudflare reports the tunnel exit as WARP" ;;
-    *) fail R-vpn-server-12.a "Cloudflare reports warp='${warp_state:-no answer}' for the tunnel exit" ;;
+    on|plus) fail R-vpn-server-12.b "the tunnel exit is WARP, not the dedicated Thai exit" ;;
+    *) [ "$exit_country" = TH ] \
+        && pass R-vpn-server-12.b "tunnel exit is in Thailand and is not WARP" \
+        || fail R-vpn-server-12.b "tunnel exit is placed in '${exit_country:-unknown}', expected TH" ;;
 esac
 
-# R-vpn-server-12.b: the exit is placed in Thailand.
-exit_country=$(printf '%s\n' "$trace" | sed -n 's/^loc=//p')
-[ "$exit_country" = TH ] \
-    && pass R-vpn-server-12.b "tunnel exit is placed in Thailand" \
-    || fail R-vpn-server-12.b "tunnel exit is placed in '${exit_country:-unknown}', expected TH"
-
-# R-vpn-server-12.f: the tunnel reaches Cloudflare at its Bangkok site, not at a
-# distant one (ADR-0009). The same report names the site.
-exit_site=$(printf '%s\n' "$trace" | sed -n 's/^colo=//p')
-[ "$exit_site" = BKK ] \
-    && pass R-vpn-server-12.f "tunnel reaches Cloudflare at its Bangkok site" \
-    || fail R-vpn-server-12.f "tunnel reaches Cloudflare at site '${exit_site:-unknown}', expected BKK"
-
-# R-vpn-server-12.c: WARP is the only way out. With no outbound that sends from the
-# server's own address, a request fails when WARP is unreachable instead of leaking.
-check R-vpn-server-12.c "no outbound sends from the server's own address; WARP is the default" \
-    jq -e '.outbounds[0].protocol == "wireguard" and .outbounds[0].tag == "warp"
-        and ([.outbounds[] | select(.protocol == "freedom")] | length) == 0' "$XRAY_CONFIG"
+# R-vpn-server-12.c: the configured proxy is the only way out. There is no
+# freedom outbound and no old WireGuard/WARP outbound to leak through.
+check R-vpn-server-12.c "the default outbound is the dedicated Thai exit; no freedom or WireGuard outbound exists" \
+    jq -e --arg protocol "$EXIT_PROXY_PROTOCOL" '.outbounds[0].tag == "thai-exit"
+        and .outbounds[0].protocol == $protocol
+        and ([.outbounds[] | select(.protocol == "freedom" or .protocol == "wireguard")] | length) == 0' "$XRAY_CONFIG"
 
 # R-vpn-server-12.d: YouTube Music opens through the tunnel. From an address that
 # Google places in an unsupported country it answers with a "not available" page.
@@ -354,7 +362,7 @@ for line in open(sys.argv[1]):
         q = dict(urllib.parse.parse_qsl(urllib.parse.urlsplit(line.strip()).query))
         print(" ".join(sorted(q)), "|", q.get("fragment", ""))' "$1" 2>/dev/null
 }
-all_params=$(link_params "$LINK_FILE"; link_params "$ALT_LINKS_FILE"; link_params "$RELAY_LINK_FILE")
+all_params=$(link_params "$LINK_FILE"; link_params "$ALT_LINKS_FILE")
 owner_params=$(link_params "$LINK_FILE"; link_params "$ALT_LINKS_FILE")
 if [ -n "$all_params" ] && ! printf '%s\n' "$all_params" | grep -Eiq '(^| )(ech|echconfiglist|echconfig)( |$)'; then
     pass R-vpn-server-24.a "no link carries an ECH setting"
@@ -367,42 +375,14 @@ else
     fail R-vpn-server-26.a "an owner's link has no TLS hello fragmentation setting"
 fi
 
-# R-vpn-server-22.a: the tunnel inbound has two clients with different IDs, the
-# owner's and the fallback server's.
-check R-vpn-server-22.a "the tunnel inbound has the clients owner and relay, with different IDs" \
+# R-vpn-server-29.a: the relay for the removed fallback is gone. Only the
+# owner's client remains, and no relay link is left on the host.
+check R-vpn-server-29.a "the tunnel inbound has only the owner client and no relay" \
     jq -e '[.inbounds[] | select(.streamSettings.network == "xhttp") | .settings.clients[]]
-        | (map(.email) | sort) == ["owner", "relay"] and (map(.id) | unique | length) == 2' "$XRAY_CONFIG"
-
-# R-vpn-server-22.b: a client using the relay link leaves through WARP in
-# Thailand. The client is the main one with the relay link's ID in place of the
-# owner's; the ID is read from the file, never passed on a command line.
-if [ -r "$RELAY_LINK_FILE" ]; then
-    python3 -I - "$work/client.json" "$RELAY_LINK_FILE" "$RELAY_PORT" > "$work/client-relay.json" <<'PY'
-import json, sys, urllib.parse
-config = json.load(open(sys.argv[1]))
-relay = urllib.parse.urlsplit(open(sys.argv[2]).read().strip())
-config["inbounds"][0]["port"] = int(sys.argv[3])
-config["outbounds"][0]["settings"]["vnext"][0]["users"][0]["id"] = relay.username
-print(json.dumps(config))
-PY
-    "$XRAY" run -c "$work/client-relay.json" > "$work/client-relay.log" 2>&1 &
-    extra_pids="$extra_pids $!"
-    for _ in $(seq 1 10); do ss -Htln "sport = :$RELAY_PORT" | grep -q . && break; sleep 1; done
-    relay_trace=$(curl -s --max-time 20 --socks5-hostname "127.0.0.1:$RELAY_PORT" https://www.cloudflare.com/cdn-cgi/trace)
-    relay_warp=$(printf '%s\n' "$relay_trace" | sed -n 's/^warp=//p')
-    relay_loc=$(printf '%s\n' "$relay_trace" | sed -n 's/^loc=//p')
-    case "$relay_warp $relay_loc" in
-        "on TH"|"plus TH") pass R-vpn-server-22.b "a client with the relay link leaves through WARP in Thailand" ;;
-        *) fail R-vpn-server-22.b "a client with the relay link got warp='${relay_warp:-no answer}' loc='${relay_loc:-unknown}'" ;;
-    esac
-else
-    fail R-vpn-server-22.b "no relay link at $RELAY_LINK_FILE"
-fi
-
-# R-vpn-server-22.d (file half): the relay link is readable by root only.
-[ "$(stat -c '%a %U' "$RELAY_LINK_FILE" 2>/dev/null)" = "600 root" ] \
-    && pass R-vpn-server-22.d "the relay link file is readable by root only" \
-    || fail R-vpn-server-22.d "the relay link file is missing or readable by others"
+        | (map(.email) == ["owner"]) and (map(.id) | length) == 1' "$XRAY_CONFIG"
+[ ! -e /root/vpn/relay-link.txt ] \
+    && pass R-vpn-server-29.b "no relay link remains on the server" \
+    || fail R-vpn-server-29.b "a relay link remains at /root/vpn/relay-link.txt"
 
 # R-vpn-server-17.a (inside half): the link names the cover name, not an
 # address, and that name resolves to Cloudflare's ranges only.
@@ -447,16 +427,14 @@ else
 fi
 
 # R-vpn-server-05.a: nothing but SSH, port 80 and the VPN port listens on a public address.
-# The one exception is the UDP socket Xray holds open for its WARP tunnel: it is
-# the tunnel's own sending socket, on a port the firewall does not admit (05.c).
 tcp_listeners=$(ss -Htlnp | awk '{print $4 " " $6}' | grep -Ev '^(127\.|\[::1\]|\[::ffff:127\.)' \
     | sed -E 's/^[^ ]*:([0-9]+) .*/\1/' | sort -un | tr '\n' ' ')
 udp_other=$(ss -Hulnp | awk '{print $4 " " $6}' | grep -Ev '^(127\.|\[::1\]|\[::ffff:127\.)' \
-    | grep -v '"xray-' | sed -E 's/^[^ ]*:([0-9]+) .*/\1/' | sort -un | tr '\n' ' ')
+    | sed -E 's/^[^ ]*:([0-9]+) .*/\1/' | sort -un | tr '\n' ' ')
 ssh_port=$(sshd -T 2>/dev/null | awk '$1 == "port" {print $2}')
 expected=$(printf '%s\n' "$ssh_port" 80 "$VPN_PORT" "${ALT_PORTS[@]}" | sort -un | tr '\n' ' ')
 if [ "$tcp_listeners" = "$expected" ] && [ -z "$udp_other" ]; then
-    pass R-vpn-server-05.a "public listeners are only SSH, 80, ${VPN_PORT} and the alternative ports, plus the WARP tunnel's own UDP socket"
+    pass R-vpn-server-05.a "public listeners are only SSH, 80, ${VPN_PORT} and the alternative ports"
 else
     fail R-vpn-server-05.a "public listeners are: tcp ${tcp_listeners:-none}; udp not owned by the proxy: ${udp_other:-none}"
 fi
