@@ -1,6 +1,6 @@
 # ADR-0009: WARP endpoint answered in Bangkok
 
-- Status: accepted
+- Status: superseded by ADR-0026
 - Date: 2026-11-10
 - Supersedes: none
 - Change: `changes/archive/2026-11-10-move-warp-endpoint-to-bangkok/`
