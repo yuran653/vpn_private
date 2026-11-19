@@ -1,8 +1,8 @@
 # Personal VPS located in Thailand
 
-Deploy and harden a VLESS VPN server on a bare Ubuntu VPS, reached by clients only through Cloudflare (VLESS over XHTTP, ADR-0013). A fallback server on its own VPS, reached directly, is decided but not built (ADR-0018, ADR-0019). A reserve path through a second CDN (Gcore), for networks that throttle Cloudflare, is decided but not built (ADR-0025). The server must prevent every identity disclosure that can be enforced server-side: DNS leaks, IPv6 egress, tunnel fingerprinting by DPI, and panel discovery.
+Deploy and harden a VLESS VPN server on a bare Ubuntu VPS, reached by clients only through Cloudflare (VLESS over XHTTP, ADR-0013). A reserve path through a second CDN (Gcore), for networks that throttle Cloudflare, is decided but not built (ADR-0025). All client traffic exits through one dedicated static Thai residential/ISP IPv4 configured on the server (ADR-0026). The server must prevent every identity disclosure that can be enforced server-side: DNS leaks, IPv6 egress, tunnel fingerprinting by DPI, panel discovery, and any exit through the server's own address.
 
-Stack: Ubuntu 22.04/24.04 LTS, Xray core managed through the 3x-ui panel, Cloudflare in front of the server (ADR-0013), Gcore as a reserve network in front of the same server (ADR-0025), Cloudflare WARP as the exit for client traffic (ADR-0008), nginx, certbot and a Docker container for the cover site (ADR-0012), ufw, fail2ban, unattended-upgrades
+Stack: Ubuntu 22.04/24.04 LTS, Xray core managed through the 3x-ui panel, Cloudflare in front of the server (ADR-0013), Gcore as a reserve network in front of the same server (ADR-0025), a dedicated static Thai residential/ISP IPv4 as the exit for client traffic (ADR-0026), nginx, certbot and a Docker container for the cover site (ADR-0012), ufw, fail2ban, unattended-upgrades
 
 ## Commands
 
