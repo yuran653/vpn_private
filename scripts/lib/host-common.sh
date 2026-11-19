@@ -1,10 +1,8 @@
 #!/usr/bin/env bash
 # host-common.sh - the host steps that every VPN server of this project shares.
 #
-# Sourced by scripts/deploy-vpn.sh (the server behind Cloudflare) and
-# scripts/deploy-fallback.sh (the fallback server, ADR-0018). Kept in one place
-# so the rules that protect identity (IPv6 off, panel on loopback, updates)
-# cannot drift apart between the two servers.
+# Sourced by scripts/deploy-vpn.sh. Kept in one place so the host rules that
+# protect identity (IPv6 off, panel on loopback, updates) have one definition.
 #
 # The function bodies were moved here unchanged from deploy-vpn.sh and are not
 # indented, so the move can be compared line by line. They set globals that

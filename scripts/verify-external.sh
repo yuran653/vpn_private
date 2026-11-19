@@ -8,12 +8,7 @@
 # (specs/vpn-server/spec.md).
 #
 # Usage:
-#   bash scripts/verify-external.sh [ssh-alias] [fallback-ssh-alias]     (default: zcom-th)
-#
-# With a second alias the fallback server (ADR-0018) is checked too. Those
-# checks ask Team Cymru's public DNS service which network the fallback's
-# address and its cover site belong to; that lookup names the address to that
-# service. The fallback checks have not been run yet (written 2026-11-12).
+#   bash scripts/verify-external.sh [ssh-alias]     (default: zcom-th)
 #
 # The SSH alias is used only to read the server's address and the panel port.
 # Needs curl, dig, openssl and python3. Exit code 0 only when every check
@@ -259,100 +254,6 @@ else
     fail R-vpn-server-25.a "avoided word in a site name, or the list is missing: $(printf '%s' "$word_hits" | tr '\n' ' ')"
 fi
 
-# The fallback server (ADR-0018, ADR-0019), when its SSH alias is given. Its
-# address and cover name are read from the server and are not printed.
-readonly FALLBACK_ALIAS=${2:-}
-if [ -n "$FALLBACK_ALIAS" ]; then
-    fremote() { ssh -o BatchMode=yes -o ConnectTimeout=15 "$FALLBACK_ALIAS" "$@" 2>/dev/null; }
-    fb_ip=$(fremote "ip -4 route get 1.1.1.1" | awk '{for (i = 1; i < NF; i++) if ($i == "src") print $(i + 1)}')
-    fb_panel_port=$(fremote "sudo -n sh -c '. /etc/x-ui/install-result.env; echo \$XUI_PANEL_PORT'")
-    # Both links pass through this shell's memory only: never printed, never on
-    # a command line.
-    fb_link=$(fremote "sudo -n cat /root/vpn/vless-link.txt")
-    first_link=$(remote "sudo -n cat /root/vpn/vless-link.txt")
-    cover=$(printf '%s\n' "$fb_link" | python3 -I -c 'import sys, urllib.parse
-print(dict(urllib.parse.parse_qsl(urllib.parse.urlsplit(sys.stdin.read().strip()).query)).get("sni", ""))')
-    if [ -z "$fb_ip" ] || [ -z "$fb_panel_port" ] || [ -z "$cover" ] || [ -z "$first_link" ]; then
-        fail R-vpn-fallback "could not read the fallback server's address, panel port or link over ssh $FALLBACK_ALIAS"
-    else
-        # R-vpn-fallback-02.a: a TLS client without the link gets the cover
-        # site's trusted certificate and its page from the fallback's address.
-        code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 --resolve "$cover:443:$fb_ip" "https://$cover/")
-        case "$code" in
-            2??|3??) pass R-vpn-fallback-02.a "the fallback's address answers as the cover site, with a trusted certificate" ;;
-            *) fail R-vpn-fallback-02.a "the fallback's address answered '$code' for the cover name" ;;
-        esac
-
-        # R-vpn-fallback-02.b: the cover site is in the same network (AS number)
-        # as the fallback, is not on the blocked list, and is not one of ours.
-        asn_of() { # asn_of <IPv4 address>  -> the AS number that announces it
-            dig +short TXT "$(printf '%s' "$1" | awk -F. '{print $4 "." $3 "." $2 "." $1}').origin.asn.cymru.com" 2>/dev/null \
-                | head -n 1 | tr -d '"' | awk '{print $1}'
-        }
-        fb_asn=$(asn_of "$fb_ip")
-        cover_asns=$(for a in $(resolve "$cover"); do asn_of "$a"; done | sort -u | tr '\n' ' ')
-        cover_listed=$(python3 -I - "$blocked_file" "$cover" "$COVER_DOMAIN" <<'PY'
-import sys
-blocked = [l.split()[0].lower() for l in open(sys.argv[1]) if l.strip() and not l.startswith("#")]
-name, ours = sys.argv[2].lower(), sys.argv[3].lower()
-under = lambda n, d: n == d or n.endswith("." + d)
-print("yes" if any(under(name, b) for b in blocked) or under(name, ours) else "no")
-PY
-        )
-        if [ -n "$fb_asn" ] && [ "$cover_asns" = "$fb_asn " ] && [ "$cover_listed" = no ]; then
-            pass R-vpn-fallback-02.b "the cover site is in the fallback's own network, not blocked and not ours"
-        else
-            fail R-vpn-fallback-02.b "the cover site is in network(s) '${cover_asns% }', the fallback in '${fb_asn:-unknown}'; on the blocked list or ours: ${cover_listed:-unknown}"
-        fi
-
-        # R-vpn-fallback-02.c: another name, and no name, still get a certificate.
-        other=$(echo | openssl s_client -connect "$fb_ip:443" -servername www.example.org 2>/dev/null | openssl x509 -noout -subject 2>/dev/null)
-        noname=$(echo | openssl s_client -connect "$fb_ip:443" -noservername 2>/dev/null | openssl x509 -noout -subject 2>/dev/null)
-        [ -n "$other" ] && [ -n "$noname" ] \
-            && pass R-vpn-fallback-02.c "another name and no name get a certificate from the fallback, not a reset" \
-            || fail R-vpn-fallback-02.c "another name or no name got no certificate from the fallback"
-
-        # R-vpn-fallback-03.c: the panel port and the usual panel and
-        # subscription ports are closed on the fallback.
-        closed=yes
-        for port in "$fb_panel_port" 80 2053 2083 2087 2096 8080 8443 10443 54321; do
-            if answers_at "$fb_ip" "$port"; then closed=no; break; fi
-        done
-        [ "$closed" = yes ] \
-            && pass R-vpn-fallback-03.c "panel-related ports and port 80 do not answer on the fallback" \
-            || fail R-vpn-fallback-03.c "a panel-related port or port 80 answers on the fallback (not naming the panel port)"
-
-        # R-vpn-fallback-05.a and 05.c: the users' two links share no client ID,
-        # key, path or name, and their profile names differ.
-        shared=$(printf '%s\n%s\n' "$first_link" "$fb_link" | python3 -I -c 'import sys, urllib.parse
-def parts(link):
-    u = urllib.parse.urlsplit(link.strip())
-    q = dict(urllib.parse.parse_qsl(u.query))
-    secrets = {u.username, u.hostname, q.get("sni"), q.get("host"), q.get("path"), q.get("pbk"), q.get("sid")}
-    return {s for s in secrets if s}, urllib.parse.unquote(u.fragment)
-first, fallback = [parts(l) for l in sys.stdin.read().split("\n")[:2]]
-print(("shared" if first[0] & fallback[0] else "none"), ("same" if first[1] == fallback[1] else "differ"))')
-        case "$shared" in
-            "none "*) pass R-vpn-fallback-05.a "the two links share no client ID, key, path or name" ;;
-            *) fail R-vpn-fallback-05.a "the two links share a client ID, key, path or name" ;;
-        esac
-        case "$shared" in
-            *" differ") pass R-vpn-fallback-05.c "the two links have different profile names" ;;
-            *) fail R-vpn-fallback-05.c "the two links have the same profile name" ;;
-        esac
-
-        # R-vpn-fallback-06.a and .b: the address check passes for the fallback
-        # from here, and fails, with exit code 1, for an address that gets no answer.
-        host_script=$(dirname "$0")/check-host.sh
-        bash "$host_script" "$fb_ip" "$cover" >/dev/null 2>&1; rc=$?
-        [ "$rc" -eq 0 ] && pass R-vpn-fallback-06.a "check-host.sh passes the fallback's address from here" \
-            || fail R-vpn-fallback-06.a "check-host.sh exited $rc for the fallback's address (2 means it could not judge)"
-        bash "$host_script" 192.0.2.1 "$cover" >/dev/null 2>&1; rc=$?
-        [ "$rc" -eq 1 ] && pass R-vpn-fallback-06.b "check-host.sh fails an address that gets no answer" \
-            || fail R-vpn-fallback-06.b "check-host.sh exited $rc for an unreachable address, expected 1"
-    fi
-    unset fb_link first_link
-fi
 
 echo
 if [ "$fails" -eq 0 ]; then
