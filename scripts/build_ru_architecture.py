@@ -616,7 +616,7 @@ html_content = """<!DOCTYPE html>
     </div>
     <div class="hud-group">
       <div class="hud-item">
-        <span>УЗЕЛ: <code>arch.casedigestai.com</code></span>
+        <span>УЗЕЛ: <code>arch-casedigestai.pages.dev</code></span>
       </div>
     </div>
   </div>
