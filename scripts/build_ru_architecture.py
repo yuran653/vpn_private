@@ -616,7 +616,7 @@ html_content = """<!DOCTYPE html>
     </div>
     <div class="hud-group">
       <div class="hud-item">
-        <span>УЗЕЛ: <code>arch-casedigestai.pages.dev</code></span>
+        <span>УЗЕЛ: <code>arch.casedigestai.com</code></span>
       </div>
     </div>
   </div>
@@ -1664,3 +1664,8 @@ os.makedirs("dist", exist_ok=True)
 with open("dist/index.html", "w", encoding="utf-8") as f:
     f.write(html_content)
 print("Created dist/index.html successfully.")
+
+with open("dist/_redirects", "w", encoding="utf-8") as f:
+    f.write("https://arch-casedigestai.pages.dev/* https://arch.casedigestai.com/:splat 301!\n")
+print("Created dist/_redirects successfully.")
+
