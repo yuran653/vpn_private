@@ -11,9 +11,9 @@
 #      congestion control, fq pacing, larger buffers (ADR-0007)
 #   4. 3x-ui installed from the pinned release, panel on 127.0.0.1 only,
 #      subscription service off
-#   5. Xray template: all client traffic out through Cloudflare WARP (the server
-#      is registered once as a free WARP device, ADR-0008), encrypted DNS,
-#      IPv4-only egress, port-53 capture, no access log
+#   5. Xray template: all client traffic out through the dedicated static
+#      Thai IPv4 proxy configured in /root/vpn/exit-proxy.env (ADR-0026),
+#      encrypted DNS, IPv4-only egress, port-53 capture, no access log
 #   6. the cover site (ADR-0012), published through Cloudflare (ADR-0013): the
 #      owner's own website. nginx answers on 80/tcp and, with a Let's Encrypt
 #      certificate, on 443/tcp; the pages come from a Docker container
@@ -25,13 +25,11 @@
 #      names files.casedigestai.com, not the server's address, and carries
 #      the connection rotation settings (ADR-0014)
 #
-#  11. the same site and tunnel on the other HTTPS ports Cloudflare proxies
+#  10. the same site and tunnel on the other HTTPS ports Cloudflare proxies
 #      (2053, 2083, 2087, 2096, 8443), from Cloudflare's ranges only, with one
 #      link per port in /root/vpn/vless-links-alt.txt (ADR-0020)
-#  12. the owner's links ask the client app to fragment the TLS hello, and
+#  11. the owner's links ask the client app to fragment the TLS hello, and
 #      carry no ECH setting (ADR-0021)
-#  10. a second client, `relay`, for the fallback server (ADR-0019); its link is
-#      written to /root/vpn/relay-link.txt (mode 600)
 #
 # Usage, on the VPS as root or via sudo, with the repo's site/ folder and
 # scripts/lib/ folder next to this script (site/ may also be given in SITE_SRC):
@@ -50,12 +48,12 @@
 # overwritten on the next run.
 #
 # Prints no secret. Panel credentials stay in /etc/x-ui/install-result.env, the
-# client link in /root/vpn/vless-link.txt and the WARP registration in
-# /root/vpn/warp.json, all readable by root only.
+# client link in /root/vpn/vless-link.txt and the dedicated exit proxy settings
+# in /root/vpn/exit-proxy.env, all readable by root only.
 
 set -euo pipefail
 
-# The host steps shared with the fallback server live in lib/host-common.sh.
+# The shared host steps live in lib/host-common.sh.
 readonly LOG_TAG=deploy
 readonly LIB=$(cd "$(dirname "$0")" && pwd)/lib/host-common.sh
 [ -r "$LIB" ] || { echo "[deploy] error: $LIB not found; copy the repo's scripts/lib folder next to this script" >&2; exit 1; }
@@ -104,24 +102,13 @@ readonly XHTTP_PATH_FILE=$STATE_DIR/xhttp-path
 readonly CF_IPS_URL=https://www.cloudflare.com/ips-v4
 readonly CF_IPS_FILE=$STATE_DIR/cloudflare-ips-v4.txt
 readonly CF_RULE_COMMENT=cloudflare
-# Cloudflare WARP (ADR-0008). The registration is made once and kept in
-# WARP_FILE. The endpoint is an address literal, so reaching WARP needs no
-# name lookup; 1280 is the packet size Cloudflare's own client uses.
-# The endpoint is the address that Cloudflare's Bangkok site answers from this
-# host, 1.4 ms away. The default one, 162.159.192.1, is answered in Singapore,
-# 27 ms away (ADR-0009).
-readonly WARP_FILE=$STATE_DIR/warp.json
-readonly WARP_API=https://api.cloudflareclient.com/v0a2158
-readonly WARP_ENDPOINT=188.114.97.1:2408
-readonly WARP_MTU=1280
+# The dedicated Thai exit (ADR-0026). The settings and credentials are made by
+# the operator before the first deploy and are never stored in this repository.
+readonly EXIT_PROXY_FILE=$STATE_DIR/exit-proxy.env
 readonly UFW_BEFORE=/etc/ufw/before.rules
 # The per-address limits on the VPN port (ADR-0005) are removed by this marker:
 # every client now arrives from a shared Cloudflare address (ADR-0013).
 readonly LIMITS_MARKER='vpn-server port limits'
-# The fallback server forwards its users' traffic to this one as a client of
-# its own (ADR-0019). Its link is kept apart from the owner's.
-readonly RELAY_EMAIL=relay
-readonly RELAY_LINK_FILE=$STATE_DIR/relay-link.txt
 # One link per alternative port (ADR-0020), one per line.
 readonly ALT_LINKS_FILE=$STATE_DIR/vless-links-alt.txt
 # TLS hello fragmentation (ADR-0021): a parameter the Happ app reads from the
@@ -139,75 +126,64 @@ host_ipv6_off         # 2
 host_tcp_tuning       # 3
 host_panel            # 4
 
-# 5. WARP device, registered once (ADR-0008). Client traffic leaves through
-#    Cloudflare WARP, because Google places this server's own address in a
-#    country where some of its services are not offered. Registering accepts
-#    Cloudflare's terms of service for the owner. The key pair is made here; the
-#    answer carries the tunnel address, the peer key and the three "reserved"
-#    bytes that Cloudflare expects in every packet. Nothing of it is printed.
-if [ ! -s "$WARP_FILE" ]; then
-    openssl genpkey -algorithm X25519 -outform DER -out "$work/warp.key"
-    warp_private=$(tail -c 32 "$work/warp.key" | base64)
-    warp_public=$(openssl pkey -inform DER -in "$work/warp.key" -pubout -outform DER | tail -c 32 | base64)
-    jq -n --arg key "$warp_public" --arg tos "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)" \
-        '{key: $key, tos: $tos, type: "PC", model: "PC", locale: "en_US", install_id: "", fcm_token: ""}' \
-        > "$work/warp-request.json"
-    curl -fsS --retry 3 --max-time 30 -X POST "$WARP_API/reg" \
-        -H 'CF-Client-Version: a-6.30-3596' -H 'User-Agent: okhttp/3.12.1' \
-        -H 'Content-Type: application/json' -d @"$work/warp-request.json" \
-        -o "$work/warp-answer.json" || die "WARP registration request failed"
-    warp_reserved=$(jq -r '.config.client_id // empty' "$work/warp-answer.json" | base64 -d 2>/dev/null \
-        | od -An -tu1 | xargs | tr ' ' ',')
-    printf '%s' "$warp_reserved" | grep -Eq '^[0-9]+,[0-9]+,[0-9]+$' \
-        || die "WARP registration answer has no usable client_id"
-    jq -e --arg private "$warp_private" --argjson reserved "[$warp_reserved]" '{
-        private_key: $private, device_id: .id, token: .token,
-        address: .config.interface.addresses.v4,
-        peer_public_key: .config.peers[0].public_key,
-        reserved: $reserved}
-        | select((.address | type) == "string" and (.peer_public_key | type) == "string")' \
-        "$work/warp-answer.json" > "$work/warp.json" \
-        || die "WARP registration answer is incomplete"
-    jq -r '.address' "$work/warp.json" | grep -Eq '^([0-9]{1,3}\.){3}[0-9]{1,3}$' \
-        || die "WARP registration gave no IPv4 tunnel address"
-    install -m 600 "$work/warp.json" "$WARP_FILE"
-    log "WARP device registered"
-else
-    log "WARP device already registered; kept"
-fi
-chmod 600 "$WARP_FILE"
+# 5. Dedicated Thai exit (ADR-0026). Client traffic leaves through the
+#    operator-provided static Thai residential/ISP IPv4 proxy. The settings are
+#    read before the tunnel is configured; without them the run stops before it
+#    can create a WARP or direct-egress fallback. Nothing from the file is printed.
+[ -f "$EXIT_PROXY_FILE" ] || die "no exit proxy settings at $EXIT_PROXY_FILE; create it root-only before deploying"
+[ "$(stat -c '%a %U' "$EXIT_PROXY_FILE")" = "600 root" ] \
+    || die "$EXIT_PROXY_FILE must be mode 600 and owned by root"
+set -a
+# shellcheck disable=SC1090
+. "$EXIT_PROXY_FILE"
+set +a
+: "${EXIT_PROXY_PROTOCOL:?}" "${EXIT_PROXY_HOST:?}" "${EXIT_PROXY_PORT:?}" \
+    "${EXIT_PROXY_USER:?}" "${EXIT_PROXY_PASS:?}" "${EXPECTED_EXIT_IPV4:?}"
+case "$EXIT_PROXY_PROTOCOL" in socks|http) ;; *) die "EXIT_PROXY_PROTOCOL must be socks or http" ;; esac
+printf '%s' "$EXIT_PROXY_PORT" | grep -Eq '^[0-9]+$' \
+    && [ "$EXIT_PROXY_PORT" -ge 1 ] && [ "$EXIT_PROXY_PORT" -le 65535 ] \
+    || die "EXIT_PROXY_PORT must be a TCP port number"
+printf '%s' "$EXPECTED_EXIT_IPV4" | grep -Eq '^([0-9]{1,3}\.){3}[0-9]{1,3}$' \
+    || die "EXPECTED_EXIT_IPV4 must be an IPv4 address"
+[ -n "$EXIT_PROXY_HOST" ] && [ -n "$EXIT_PROXY_USER" ] && [ -n "$EXIT_PROXY_PASS" ] \
+    || die "exit proxy host, user and password must not be empty"
+
+# The credentials are exported by `set -a` above, so jq reads them from its
+# environment and none appears in a process command line.
+jq -n '{
+    protocol: env.EXIT_PROXY_PROTOCOL, tag: "thai-exit", settings: {servers: [{
+        address: env.EXIT_PROXY_HOST, port: (env.EXIT_PROXY_PORT | tonumber),
+        users: [{user: env.EXIT_PROXY_USER, pass: env.EXIT_PROXY_PASS}]}]}}' \
+    > "$work/exit-outbound.json"
 
 #    Xray template: the panel's default plus this project's rules.
-#    - warp: the only way out. It is the first outbound, so it carries whatever
-#      the rules do not block, and the default "direct" outbound is removed:
-#      when WARP is down a request fails, it never leaves from this server's
-#      own address. IPv4 only; the tunnel runs inside Xray, not as a host interface
+#    - thai-exit: the only way out. It is the first outbound, so it carries
+#      whatever the rules do not block; "freedom" and old WARP/WireGuard
+#      outbounds are removed. When the proxy is down a request fails, it never
+#      leaves from this server's own address.
 #    - dns: every lookup goes out over DoH through the same outbound, IPv4 answers only
 #    - port 53 from clients is answered by that DNS, whatever resolver they asked
 #    - IPv6 destinations are refused
 #    - log.access stays "none": no record of who connected to what
 api_ok "read default template" panel/api/xray/getDefaultJsonConfig | jq \
-    --slurpfile warp "$WARP_FILE" --arg endpoint "$WARP_ENDPOINT" --argjson mtu "$WARP_MTU" '.obj
+    --slurpfile exit_proxy "$work/exit-outbound.json" '.obj
     | .log.access = "none"
     | .log.dnsLog = false
     | .dns = {servers: ["https://1.1.1.1/dns-query", "https://8.8.8.8/dns-query"], queryStrategy: "UseIPv4"}
-    | .outbounds = [{protocol: "wireguard", tag: "warp", settings: {
-            secretKey: $warp[0].private_key, address: [$warp[0].address + "/32"],
-            peers: [{publicKey: $warp[0].peer_public_key, endpoint: $endpoint, allowedIPs: ["0.0.0.0/0"]}],
-            reserved: $warp[0].reserved, mtu: $mtu, domainStrategy: "ForceIPv4", noKernelTun: true}}]
-        + [.outbounds[] | select(.protocol != "freedom")]
+    | .outbounds = [$exit_proxy[0]]
+        + [.outbounds[] | select(.protocol != "freedom" and .protocol != "wireguard")]
         + [{protocol: "dns", tag: "dns-out"}]
     | .routing.rules = [.routing.rules[0],
         {type: "field", port: "53", outboundTag: "dns-out"},
         {type: "field", ip: ["::/0"], outboundTag: "blocked"}] + .routing.rules[1:]' > "$work/template.json"
 [ "$(jq -r '.routing.rules[0].outboundTag' "$work/template.json")" = api ] \
     || die "default template changed shape: first routing rule is not the api rule"
-[ "$(jq -r '[.outbounds[0].tag, ([.outbounds[] | select(.protocol == "freedom")] | length)] | join(" ")' "$work/template.json")" = "warp 0" ] \
-    || die "template still has a way out that is not WARP"
+[ "$(jq -r '[.outbounds[0].tag, ([.outbounds[] | select(.protocol == "freedom" or .protocol == "wireguard")] | length)] | join(" ")' "$work/template.json")" = "thai-exit 0" ] \
+    || die "template still has a way out that is not the dedicated Thai exit"
 api_ok "save template" panel/api/xray/update -X POST \
     --data-urlencode "xraySetting@$work/template.json" >/dev/null
+rm -f "$STATE_DIR/warp.json"
 log "xray template applied"
-
 
 # 6. Cover site (ADR-0012), published through Cloudflare (ADR-0013). The
 #    website of SITE_NAMES runs on this host; Cloudflare
@@ -545,23 +521,13 @@ if [ "$(inbound_norm "$work/inbound-now.json")" != "$(inbound_norm "$work/inboun
     log "XHTTP inbound updated: profile name, loopback only, padding"
 fi
 
-# The relay client (ADR-0019, R-vpn-server-22): a second client ID on the same
-# inbound, used only by the fallback server. Made once and kept.
-relay_now=$(api panel/api/clients/get/"$RELAY_EMAIL" 2>/dev/null || true)
-if printf '%s' "$relay_now" | jq -e '.success == true' >/dev/null 2>&1; then
-    printf '%s' "$relay_now" | jq -e --argjson id "$xhttp_id" '.obj.inboundIds | index($id) != null' >/dev/null \
-        || die "the client '$RELAY_EMAIL' exists but is not attached to the tunnel inbound; attach it in the panel and run again"
-    log "relay client already exists; ID kept"
-else
-    relay_uuid=$(api_ok "new uuid" panel/api/server/getNewUUID | jq -r '.obj.uuid // .obj')
-    printf '%s' "$relay_uuid" | grep -Eq '^[0-9a-f-]{36}$' || die "panel returned no UUID for the relay client"
-    jq -n --arg id "$relay_uuid" --arg email "$RELAY_EMAIL" --argjson inbound "$xhttp_id" '{
-        client: {id: $id, email: $email, flow: "", enable: true, limitIp: 0, totalGB: 0, expiryTime: 0},
-        inboundIds: [$inbound]}' > "$work/relay-client.json"
-    api_ok "add relay client" panel/api/clients/add -X POST \
-        -H 'Content-Type: application/json' -d @"$work/relay-client.json" >/dev/null
-    log "relay client created"
+# The fallback relay was removed (ADR-0026). A leftover relay client on an
+# existing host is deleted, so it cannot keep an unused second ID alive.
+if api panel/api/clients/get/relay 2>/dev/null | jq -e '.success == true' >/dev/null; then
+    api_ok "delete relay client" panel/api/clients/del/relay -X POST >/dev/null
+    log "leftover relay client deleted"
 fi
+rm -f "$STATE_DIR/relay-link.txt"
 
 api_ok "restart xray" panel/api/server/restartXrayService -X POST >/dev/null
 listening=""
@@ -618,7 +584,6 @@ log "80/tcp and ${VPN_PORT}/tcp closed to everyone but Cloudflare"
 #    because the browser fingerprints offer h2 whatever the ALPN says (ADR-0015). It names the host, not the
 #    address: the client reaches Cloudflare, which reaches this server.
 #    Written to a root-only file.
-#    The relay link (ADR-0019) is the same link for the client `relay`.
 write_link() { # write_link <client email> <profile name> <file> [port] [fragment]
 api_ok "read inbound" "panel/api/inbounds/get/$xhttp_id" | jq -r \
     --arg host "$COVER_NAME" --argjson port "${4:-$VPN_PORT}" --arg email "$1" --arg name "$2" --arg frag "${5:-}" \
@@ -634,8 +599,6 @@ grep -q '^vless://' "$3" || die "the link for the client '$1' was not written"
 }
 write_link "$CLIENT_EMAIL" "$INBOUND_REMARK" "$LINK_FILE" "$VPN_PORT" "$LINK_FRAGMENT"
 log "client link written to $LINK_FILE"
-write_link "$RELAY_EMAIL" "$RELAY_EMAIL" "$RELAY_LINK_FILE"
-log "relay link written to $RELAY_LINK_FILE"
 # The same link on each alternative port (ADR-0020), for a network that cuts
 # 443 to the name. The profile name carries the port, so the app tells them apart.
 : > "$ALT_LINKS_FILE"
