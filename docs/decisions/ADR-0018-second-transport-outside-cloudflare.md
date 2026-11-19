@@ -1,6 +1,6 @@
 # ADR-0018: A second transport that does not pass through Cloudflare
 
-- Status: accepted; the second server's own WARP exit superseded by ADR-0019; the rejection of a second CDN superseded by ADR-0025
+- Status: superseded by ADR-0026
 - Date: 2026-11-12
 - Supersedes: ADR-0013 in part (the "CDN only" choice and its first "Do not" line) and ADR-0012 in part (its "Do not" line on a third-party Reality cover site, for the second server only). It narrows ADR-0013's two other "Do not" lines to the server behind Cloudflare, and adopts for the second server the SSH restriction that ADR-0005 rejected for the first
 - Change: none yet
