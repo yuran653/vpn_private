@@ -1,6 +1,6 @@
 # ADR-0013: Clients reach the server only through Cloudflare
 
-- Status: accepted; the "CDN only" choice and the first "Do not" line superseded by ADR-0018
+- Status: accepted; the firewall line extended to Gcore's ranges by ADR-0025
 - Date: 2026-11-12
 - Supersedes: ADR-0012 in part (the Reality inbound and the direct client link; the cover site itself stays), ADR-0005 in part (the per-address limits on port 443; the SSH limits stay)
 - Change: `changes/archive/2026-11-12-route-clients-through-cloudflare/`
@@ -46,6 +46,6 @@ The owner chose on 2026-11-12:
 
 ## Do not
 
-- Do not give clients a link to the address of the server behind Cloudflare, or open a second way in on that server: its address must stay unused and unanswering. A way in outside Cloudflare runs on a separate server and is handed out only as a fallback. (ADR-0013, reworded by ADR-0018)
-- On the server behind Cloudflare, do not admit 80/tcp or 443/tcp from outside Cloudflare's published ranges: that server's address must not answer probes directly. The fallback server admits 443/tcp from anywhere and answers as its cover site (ADR-0018). (ADR-0013)
+- Do not give clients a link to the address of the server behind Cloudflare, or open a second way in on that server: its address must stay unused and unanswering. (ADR-0013)
+- On the server behind Cloudflare, do not admit 80/tcp or 443/tcp from outside Cloudflare's published ranges: that server's address must not answer probes directly. The reserve path adds Gcore's published ranges (ADR-0025). (ADR-0013)
 - On the server behind Cloudflare, do not limit connections per source address on port 443: every client arrives from a shared Cloudflare address. (ADR-0013)

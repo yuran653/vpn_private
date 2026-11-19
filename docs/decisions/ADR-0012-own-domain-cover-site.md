@@ -1,10 +1,10 @@
 # ADR-0012: Cover site on the owner's own domain, served from the VPS
 
-- Status: accepted; the Reality inbound and the direct link superseded by ADR-0013, the "Do not" line on a third-party cover site reworded by ADR-0018
+- Status: accepted; the Reality inbound and the direct link superseded by ADR-0013
 - Date: 2026-11-12
 - Supersedes: ADR-0003
 - Change: `changes/archive/2026-11-12-serve-own-cover-site/`
-- Note (2026-11-12): the names no longer resolve to the VPS address: Cloudflare proxies them (ADR-0013), and pointing the owner's domain straight at a VPS address is now forbidden (ADR-0018).
+- Note (2026-11-19): the names no longer resolve to the VPS address: Cloudflare proxies them (ADR-0013), and pointing the owner's domain straight at a VPS address remains forbidden.
 
 ## Context
 
@@ -49,5 +49,5 @@ The cover site is the owner's own site, served by the VPS itself.
 
 ## Do not
 
-- Do not use as the Reality cover site a third-party site whose addresses are not announced by the same AS number as the VPS's address, or point the owner's own domain straight at a VPS address: the first does not match the address, the second ties a name to a hosting address. (ADR-0012, reworded by ADR-0018)
+- Do not point the owner's own domain straight at a VPS address: it ties a name to a hosting address. (ADR-0012)
 - Do not publish a Docker container port on a public address: Docker's firewall rules bypass ufw. Publish on `127.0.0.1` and put the host web server in front. (ADR-0012)

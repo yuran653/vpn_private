@@ -1,6 +1,6 @@
 # ADR-0019: The fallback server is an entry only and relays to the first server
 
-- Status: accepted
+- Status: superseded by ADR-0026
 - Date: 2026-11-12
 - Supersedes: ADR-0018 in part (the line that the second server's client traffic leaves through its own WARP tunnel)
 - Change: `changes/add-fallback-reality-server/` (open)
